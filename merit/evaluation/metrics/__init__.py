@@ -1,5 +1,5 @@
 """
-Merit Metrics Module
+MERIT Metrics Module
 
 This module provides metrics for evaluating LLM applications.
 """

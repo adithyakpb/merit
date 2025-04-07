@@ -1,5 +1,5 @@
 """
-Merit Evaluation Metrics Base Classes
+MERIT Evaluation Metrics Base Classes
 
 This module provides base classes for metrics used in evaluating Large Language Model powered systems.
 """

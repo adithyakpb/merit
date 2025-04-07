@@ -1,10 +1,10 @@
 """
-Merit RAG Metrics
+MERIT RAG Metrics
 
 This module provides metrics for evaluating RAG (Retrieval-Augmented Generation) systems.
 """
 
-from ...core.prompts import (
+from prompts import (
     CORRECTNESS_EVALUATION_PROMPT,
     FAITHFULNESS_EVALUATION_PROMPT,
     RELEVANCE_EVALUATION_PROMPT,
@@ -55,7 +55,7 @@ class CorrectnessMetric(RAGMetric):
         
         Args:
             input_sample: The input sample
-            answer: The model's answer (AgentAnswer object or string)
+            answer: The model's answer (Response object or string)
             
         Returns:
             dict: A dictionary with the correctness evaluation
@@ -64,7 +64,7 @@ class CorrectnessMetric(RAGMetric):
         
         try:
             # Get answer text and document content
-            answer_text = answer.message if hasattr(answer, "message") else answer
+            answer_text = answer.content if hasattr(answer, "content") else answer
             
             # Try to get document content from different sources
             document_content = ""
@@ -130,7 +130,7 @@ class FaithfulnessMetric(RAGMetric):
         
         Args:
             input_sample: The input sample
-            answer: The model's answer (AgentAnswer object or string)
+            answer: The model's answer (Response object or string)
             
         Returns:
             dict: A dictionary with the faithfulness score
@@ -138,7 +138,7 @@ class FaithfulnessMetric(RAGMetric):
         llm_client = self._llm_client 
         
         # Get answer text and documents
-        answer_text = answer.message if hasattr(answer, "message") else answer
+        answer_text = answer.content if hasattr(answer, "content") else answer
         
         # Try to get documents from different sources
         documents = []
@@ -207,7 +207,7 @@ class RelevanceMetric(RAGMetric):
         
         Args:
             input_sample: The input sample
-            answer: The model's answer (AgentAnswer object or string)
+            answer: The model's answer (Response object or string)
             
         Returns:
             dict: A dictionary with the relevance score
@@ -215,7 +215,7 @@ class RelevanceMetric(RAGMetric):
         llm_client = self._llm_client 
         
         # Get answer text
-        answer_text = answer.message if hasattr(answer, "message") else answer
+        answer_text = answer.content if hasattr(answer, "content") else answer
         
         try:
             # Use the relevance evaluation prompt
@@ -267,7 +267,7 @@ class CoherenceMetric(RAGMetric):
         
         Args:
             input_sample: The input sample
-            answer: The model's answer (AgentAnswer object or string)
+            answer: The model's answer (Response object or string)
             
         Returns:
             dict: A dictionary with the coherence score
@@ -275,7 +275,7 @@ class CoherenceMetric(RAGMetric):
         llm_client = self._llm_client 
         
         # Get answer text
-        answer_text = answer.message if hasattr(answer, "message") else answer
+        answer_text = answer.content if hasattr(answer, "content") else answer
         
         try:
             # Use the coherence evaluation prompt
@@ -326,7 +326,7 @@ class FluencyMetric(RAGMetric):
         
         Args:
             input_sample: The input sample
-            answer: The model's answer (AgentAnswer object or string)
+            answer: The model's answer (Response object or string)
             
         Returns:
             dict: A dictionary with the fluency score
@@ -334,7 +334,7 @@ class FluencyMetric(RAGMetric):
         llm_client = self._llm_client
         
         # Get answer text
-        answer_text = answer.message if hasattr(answer, "message") else answer
+        answer_text = answer.content if hasattr(answer, "content") else answer
         
         try:
             # Use the fluency evaluation prompt

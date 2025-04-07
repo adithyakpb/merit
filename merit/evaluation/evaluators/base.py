@@ -1,5 +1,5 @@
 """
-Merit Evaluator Classes
+MERIT Evaluator Classes
 
 This module provides base classes for evaluators used in evaluating Large Language Model powered systems.
 """

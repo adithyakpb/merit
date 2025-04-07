@@ -1,5 +1,5 @@
 """
-Merit RAG Evaluator
+MERIT RAG Evaluator
 
 This module provides evaluator classes for RAG (Retrieval-Augmented Generation) systems.
 """
@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Union, Callable, Sequence
 from inspect import signature
 from ..metrics.rag import CorrectnessMetric, FaithfulnessMetric, RelevanceMetric, CoherenceMetric, FluencyMetric
 from .base import BaseEvaluator, EvaluationReport, EvaluationResult
-from ...core.models import  TestSet, TestInput
+from ...core.models import  TestSet, TestItem
 from ...knowledge import KnowledgeBase
 from ...core.logging import get_logger
 
@@ -18,26 +18,26 @@ logger = get_logger(__name__)
 # Constants
 ANSWER_FN_HISTORY_PARAM = "history"
 
-class AgentAnswer:
+class Response:
     """
-    A class representing an answer from an agent.
+    A class representing a response from the evaluated system.
     
     Attributes:
-        message: The answer text
+        content: The answer text
         documents: The documents used to generate the answer
         metadata: Additional metadata
     """
     
-    def __init__(self, message, documents=None, metadata=None):
+    def __init__(self, content, documents=None, metadata=None):
         """
         Initialize the agent answer.
         
         Args:
-            message: The answer text
+            content: The answer text
             documents: The documents used to generate the answer
             metadata: Additional metadata
         """
-        self.message = message
+        self.content = content
         self.documents = documents
         self.metadata = metadata or {}
 
@@ -153,7 +153,7 @@ class RAGEvaluator(BaseEvaluator):
                 # Generate answer
                 answer = answer_fn(sample.input, **kwargs)
                 
-                # Cast answer to AgentAnswer if needed
+                # Cast answer to Response if needed
                 answer = self._cast_to_agent_answer(answer)
                 
                 # Evaluate with metrics
@@ -193,7 +193,7 @@ class RAGEvaluator(BaseEvaluator):
             input_id=sample.id,
             input=sample.input,
             reference_answer=sample.reference_answer,
-            model_answer=answer.message,
+            model_answer=answer.content,
             document_id=sample.document.id,
             document_content=sample.document.content,
             metadata=sample.metadata
@@ -225,7 +225,7 @@ class RAGEvaluator(BaseEvaluator):
         Get inputs from the test set.
         
         Returns:
-            List[TestInput]: The inputs
+            List[TestItem]: The inputs
         """
         for attr in ['inputs', 'samples', 'inputs']:
             if hasattr(self.testset, attr):
@@ -234,24 +234,24 @@ class RAGEvaluator(BaseEvaluator):
     
     def _cast_to_agent_answer(self, answer):
         """
-        Cast an answer to an AgentAnswer object.
+        Cast an answer to an Response object.
         
         Args:
             answer: The answer to cast
             
         Returns:
-            AgentAnswer: The cast answer
+            Response: The cast answer
         """
-        if isinstance(answer, AgentAnswer):
+        if isinstance(answer, Response):
             return answer
         
         if isinstance(answer, str):
-            return AgentAnswer(message=answer)
+            return Response(content=answer)
         
-        raise ValueError(f"The answer function must return a string or an AgentAnswer object. Got {type(answer)} instead.")
+        raise ValueError(f"The answer function must return a string or an Response object. Got {type(answer)} instead.")
 
 def evaluate_rag(
-    answer_fn: Union[Callable, Sequence[Union[AgentAnswer, str]]],
+    answer_fn: Union[Callable, Sequence[Union[Response, str]]],
     testset: Optional[TestSet] = None,
     knowledge_base: Optional[KnowledgeBase] = None,
     llm_client = None,
@@ -321,18 +321,18 @@ def evaluate_rag(
 
 def _cast_to_agent_answer(answer):
     """
-    Cast an answer to an AgentAnswer object.
+    Cast an answer to an Response object.
     
     Args:
         answer: The answer to cast
         
     Returns:
-        AgentAnswer: The cast answer
+        Response: The cast answer
     """
-    if isinstance(answer, AgentAnswer):
+    if isinstance(answer, Response):
         return answer
     
     if isinstance(answer, str):
-        return AgentAnswer(message=answer)
+        return Response(content=answer)
     
-    raise ValueError(f"The answer function must return a string or an AgentAnswer object. Got {type(answer)} instead.")
+    raise ValueError(f"The answer function must return a string or an Response object. Got {type(answer)} instead.")

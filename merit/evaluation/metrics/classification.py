@@ -1,6 +1,10 @@
 from .base import BaseMetric
 from abc import abstractmethod
 from ...core.logging import get_logger
+from ...core.models import TestItem, Input, Response    
+from ...core.prompts import Prompt
+from ...api.base import BaseAPIClient
+
 
 logger = get_logger(__name__)
 class ClassificationPerformanceMetric(BaseMetric):
@@ -29,51 +33,8 @@ class ClassificationPerformanceMetric(BaseMetric):
             "binary_counts": binary_counts
         }
     
-    def _get_predictions(self, model, dataset):
-        """
-        Get predictions from the model on the dataset.
-        
-        Args:
-            model: The model to evaluate
-            dataset: The dataset to evaluate on
-            
-        Returns:
-            tuple: (y_true, y_pred)
-        """
-        # Default implementation assumes model has a predict method
-        # and dataset has a target attribute
-        try:
-            y_true = dataset.target
-            y_pred = model.predict(dataset)
-            return y_true, y_pred
-        except AttributeError:
-            # Try to handle different model/dataset interfaces
-            try:
-                # Try to get predictions from model's predict method
-                if hasattr(model, 'predict'):
-                    y_pred = model.predict(dataset)
-                else:
-                    # Assume model is callable
-                    y_pred = model(dataset)
-                
-                # Try to get true values from dataset
-                if hasattr(dataset, 'target'):
-                    y_true = dataset.target
-                elif hasattr(dataset, 'y'):
-                    y_true = dataset.y
-                elif hasattr(dataset, 'labels'):
-                    y_true = dataset.labels
-                else:
-                    # Assume dataset is a tuple of (X, y)
-                    _, y_true = dataset
-                
-                return y_true, y_pred
-            except Exception as e:
-                logger.error(f"Failed to get predictions: {str(e)}")
-                raise
-    
     @abstractmethod
-    def _calculate_metric(self, y_true, y_pred, model):
+    def _calculate_metric(self, input: Input, response: Response, client: BaseAPIClient):
         """
         Calculate the metric value.
         
@@ -100,10 +61,10 @@ class ClassificationPerformanceMetric(BaseMetric):
             int: The number of affected samples
         """
         return len(y_true)
-    
-    def _calculate_binary_counts(self, y_true, y_pred):
+    # NOTE we need to refactor this 
+    def _calculate_confusion_matrix(self, y_true, y_pred):
         """
-        Calculate binary counts (TP, FP, TN, FN).
+        Calculate the values for the confusion matrix (TP, FP, TN, FN).
         
         Args:
             y_true: The true values
@@ -119,3 +80,42 @@ class ClassificationPerformanceMetric(BaseMetric):
             "tn": sum((y_t == 0 and y_p == 0) for y_t, y_p in zip(y_true, y_pred)),
             "fn": sum((y_t == 1 and y_p == 0) for y_t, y_p in zip(y_true, y_pred))
         }
+
+#TODO base class of LLM calclated Metric
+class LLMMeasuredMetric(BaseMetric):
+    """Base class for metrics that are calculated using an LLM."""
+    def __call__(self, test_item: TestItem, response, client_llm_callable: callable, prompt: "Prompt"):
+        """
+        Calculate the metric for a model on a dataset.
+        
+        Args:
+            test_item: The test item to evaluate
+            response: The evaluated system's response
+            client: The client to use for the evaluation
+            prompt: The prompt to use for the evaluation
+            
+            
+        Returns:
+            dict: A dictionary with the metric value and additional information
+        """
+        value = self._calculate_metric(test_item, response, prompt, client_llm_callable)
+        
+        return {
+            "value": value
+        }
+    
+    @abstractmethod
+    def _calculate_metric(self, test_item: TestItem, response: Response, prompt: Prompt, llm_callable: callable):
+        """
+        Calculate the metric value.
+        
+        Args:
+            test_item: The test item to evaluate
+            response: The evaluated system's response
+            prompt: The prompt to use for the evaluation
+            llm_callable: The LLM callable to use for the evaluation
+            
+        Returns:
+            float: The metric value
+        """
+        raise NotImplementedError
