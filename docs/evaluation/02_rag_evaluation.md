@@ -113,7 +113,7 @@ for metric, score in report.get_overall_scores().items():
 For more accurate evaluation, your answer function can return both the answer text and the documents used to generate it:
 
 ```python
-from merit.evaluation.evaluators.rag import AgentAnswer
+from merit.base import Response
 
 def get_answer_with_docs(query):
     # Retrieve relevant documents
@@ -123,8 +123,8 @@ def get_answer_with_docs(query):
     answer = "This is the answer based on the retrieved documents."
     
     # Return both the answer and the documents
-    return AgentAnswer(
-        message=answer,
+    return Response(
+        content=answer,
         documents=[doc for doc, _ in relevant_docs],
         metadata={"query": query}
     )
@@ -273,8 +273,8 @@ def get_answer(query):
     answer = "This is the answer based on the retrieved documents."
     
     # Return both the answer and the documents
-    return AgentAnswer(
-        message=answer,
+    return Response(
+        content=answer,
         documents=[doc for doc, _ in relevant_docs]
     )
 ```

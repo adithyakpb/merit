@@ -62,7 +62,7 @@ test_set = TestSet(
 
 ### Test Input
 
-A **Test Input** represents a single test case in a test set. In MERIT, a test input is represented by the `TestInput` class, which includes:
+A **Test Input** represents a single test case in a test set. In MERIT, a test input is represented by the `TestItem` class, which includes:
 
 - The input text (e.g., a question)
 - A reference answer
@@ -70,10 +70,10 @@ A **Test Input** represents a single test case in a test set. In MERIT, a test i
 - Metadata about the input
 
 ```python
-from merit.core.models import TestInput
+from merit.core.models import TestItem
 
 # Create a test input
-test_input = TestInput(
+test_input = TestItem(
     input="What is the capital of France?",
     reference_answer="The capital of France is Paris.",
     document=document,

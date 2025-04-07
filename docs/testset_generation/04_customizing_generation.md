@@ -127,13 +127,13 @@ You can implement custom filters for generated inputs by extending the `TestSetG
 
 ```python
 from merit.testset_generation import TestSetGenerator
-from merit.core.models import TestInput
+from merit.core.models import TestItem
 from typing import List
 
 class CustomTestSetGenerator(TestSetGenerator):
     """Custom test set generator with input filtering."""
     
-    def filter_inputs(self, inputs: List[TestInput]) -> List[TestInput]:
+    def filter_inputs(self, inputs: List[TestItem]) -> List[TestItem]:
         """
         Filter the generated inputs.
         
@@ -141,7 +141,7 @@ class CustomTestSetGenerator(TestSetGenerator):
             inputs: The generated inputs to filter.
             
         Returns:
-            List[TestInput]: The filtered inputs.
+            List[TestItem]: The filtered inputs.
         """
         # Filter out inputs that don't meet certain criteria
         filtered_inputs = []
@@ -215,7 +215,7 @@ You can implement custom generation logic by extending the `TestSetGenerator` cl
 
 ```python
 from merit.testset_generation import TestSetGenerator
-from merit.core.models import TestSet, TestInput, Document
+from merit.core.models import TestSet, TestItem, Document
 from typing import List, Optional
 
 class TemplateBasedGenerator(TestSetGenerator):
@@ -232,7 +232,7 @@ class TemplateBasedGenerator(TestSetGenerator):
         super().__init__(**kwargs)
         self.templates = templates
     
-    def generate_from_document(self, document: Document, num_inputs: int) -> List[TestInput]:
+    def generate_from_document(self, document: Document, num_inputs: int) -> List[TestItem]:
         """
         Generate test inputs from a document using templates.
         
@@ -241,7 +241,7 @@ class TemplateBasedGenerator(TestSetGenerator):
             num_inputs: The number of inputs to generate.
             
         Returns:
-            List[TestInput]: The generated test inputs.
+            List[TestItem]: The generated test inputs.
         """
         # Generate inputs using templates
         inputs = []
@@ -270,7 +270,7 @@ class TemplateBasedGenerator(TestSetGenerator):
                 reference_answer = self._generate_reference_answer(input_text, document)
                 
                 # Create a test input
-                test_input = TestInput(
+                test_input = TestItem(
                     input=input_text,
                     reference_answer=reference_answer,
                     document=document,
@@ -333,7 +333,7 @@ Here's an example of a domain-specific test set generator for medical questions:
 
 ```python
 from merit.testset_generation import TestSetGenerator
-from merit.core.models import TestSet, TestInput, Document
+from merit.core.models import TestSet, TestItem, Document
 from typing import List, Optional
 
 class MedicalTestSetGenerator(TestSetGenerator):
@@ -446,7 +446,7 @@ class MedicalTestSetGenerator(TestSetGenerator):
         # Include the document if it contains at least 2 medical terms
         return medical_term_count >= 2
     
-    def generate_from_document(self, document: Document, num_inputs: int) -> List[TestInput]:
+    def generate_from_document(self, document: Document, num_inputs: int) -> List[TestItem]:
         """
         Generate test inputs from a document.
         
@@ -455,7 +455,7 @@ class MedicalTestSetGenerator(TestSetGenerator):
             num_inputs: The number of inputs to generate.
             
         Returns:
-            List[TestInput]: The generated test inputs.
+            List[TestItem]: The generated test inputs.
         """
         # Filter out non-medical documents
         if not self.filter_document(document):

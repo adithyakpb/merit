@@ -113,27 +113,27 @@ example_inputs = [
 ]
 ```
 
-### ExampleInput Objects
+### ExampleItem Objects
 
 ```python
-from merit.core.models import ExampleInput
+from merit.core.models import ExampleItem
 
 example_inputs = [
-    ExampleInput(input="What is artificial intelligence?"),
-    ExampleInput(input="How does machine learning work?"),
-    ExampleInput(input="What's the difference between deep learning and machine learning?")
+    ExampleItem(input="What is artificial intelligence?"),
+    ExampleItem(input="How does machine learning work?"),
+    ExampleItem(input="What's the difference between deep learning and machine learning?")
 ]
 ```
 
 ### ExampleSet Object
 
 ```python
-from merit.core.models import ExampleSet, ExampleInput
+from merit.core.models import ExampleSet, ExampleItem
 
 example_set = ExampleSet(inputs=[
-    ExampleInput(input="What is artificial intelligence?"),
-    ExampleInput(input="How does machine learning work?"),
-    ExampleInput(input="What's the difference between deep learning and machine learning?")
+    ExampleItem(input="What is artificial intelligence?"),
+    ExampleItem(input="How does machine learning work?"),
+    ExampleItem(input="What's the difference between deep learning and machine learning?")
 ])
 ```
 
@@ -180,14 +180,14 @@ test_set = generator.generate(
 You can provide examples that include reference answers:
 
 ```python
-from merit.core.models import ExampleInput
+from merit.core.models import ExampleItem
 
 example_inputs = [
-    ExampleInput(
+    ExampleItem(
         input="What is artificial intelligence?",
         reference_answer="Artificial Intelligence (AI) refers to the simulation of human intelligence in machines that are programmed to think like humans and mimic their actions."
     ),
-    ExampleInput(
+    ExampleItem(
         input="How does machine learning work?",
         reference_answer="Machine Learning works by using algorithms to parse data, learn from that data, and then make predictions or decisions based on what it has learned."
     )
@@ -199,14 +199,14 @@ example_inputs = [
 You can provide examples that include model responses:
 
 ```python
-from merit.core.models import ExampleInput
+from merit.core.models import ExampleItem
 
 example_inputs = [
-    ExampleInput(
+    ExampleItem(
         input="What is artificial intelligence?",
         response="Artificial Intelligence (AI) is a field of computer science focused on creating systems capable of performing tasks that typically require human intelligence."
     ),
-    ExampleInput(
+    ExampleItem(
         input="How does machine learning work?",
         response="Machine learning works by using algorithms to analyze data, identify patterns, and make decisions with minimal human intervention."
     )
@@ -218,15 +218,15 @@ example_inputs = [
 You can provide examples that include feedback on the responses:
 
 ```python
-from merit.core.models import ExampleInput
+from merit.core.models import ExampleItem
 
 example_inputs = [
-    ExampleInput(
+    ExampleItem(
         input="What is artificial intelligence?",
         response="Artificial Intelligence (AI) is a field of computer science focused on creating systems capable of performing tasks that typically require human intelligence.",
         feedback={"accuracy": 9, "clarity": 8, "completeness": 7}
     ),
-    ExampleInput(
+    ExampleItem(
         input="How does machine learning work?",
         response="Machine learning works by using algorithms to analyze data, identify patterns, and make decisions with minimal human intervention.",
         feedback={"accuracy": 8, "clarity": 9, "completeness": 7}

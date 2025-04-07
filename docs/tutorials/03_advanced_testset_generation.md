@@ -256,13 +256,13 @@ You can implement custom filtering and post-processing logic by extending the `T
 
 ```python
 from merit.testset_generation import TestSetGenerator
-from merit.core.models import TestInput, TestSet
+from merit.core.models import TestItem, TestSet
 from typing import List
 
 class CustomTestSetGenerator(TestSetGenerator):
     """Custom test set generator with filtering and post-processing."""
     
-    def filter_inputs(self, inputs: List[TestInput]) -> List[TestInput]:
+    def filter_inputs(self, inputs: List[TestItem]) -> List[TestItem]:
         """
         Filter the generated inputs.
         
@@ -270,7 +270,7 @@ class CustomTestSetGenerator(TestSetGenerator):
             inputs: The generated inputs to filter.
             
         Returns:
-            List[TestInput]: The filtered inputs.
+            List[TestItem]: The filtered inputs.
         """
         filtered_inputs = []
         
@@ -292,7 +292,7 @@ class CustomTestSetGenerator(TestSetGenerator):
         
         return filtered_inputs
     
-    def post_process_inputs(self, inputs: List[TestInput]) -> List[TestInput]:
+    def post_process_inputs(self, inputs: List[TestItem]) -> List[TestItem]:
         """
         Post-process the generated inputs.
         
@@ -300,7 +300,7 @@ class CustomTestSetGenerator(TestSetGenerator):
             inputs: The generated inputs to post-process.
             
         Returns:
-            List[TestInput]: The post-processed inputs.
+            List[TestItem]: The post-processed inputs.
         """
         processed_inputs = []
         
@@ -469,7 +469,7 @@ You can create adversarial test sets to stress-test your system:
 
 ```python
 from merit.testset_generation import TestSetGenerator
-from merit.core.models import TestSet, TestInput
+from merit.core.models import TestSet, TestItem
 from merit.core.prompts import Prompt
 from typing import List
 
@@ -536,7 +536,7 @@ You can combine these techniques to create a comprehensive test set generation s
 
 ```python
 from merit.testset_generation import TestSetGenerator
-from merit.core.models import TestSet, TestInput
+from merit.core.models import TestSet, TestItem
 from merit.core.prompts import Prompt
 from typing import List, Dict, Any
 
@@ -816,7 +816,7 @@ Here's a complete example that combines several advanced techniques:
 from merit.testset_generation import TestSetGenerator
 from merit.knowledge import KnowledgeBase
 from merit.api.client import OpenAIClient
-from merit.core.models import TestSet, TestInput
+from merit.core.models import TestSet, TestItem
 from merit.core.prompts import Prompt
 from typing import List, Dict, Any
 
@@ -837,7 +837,7 @@ class AdvancedTestSetGenerator(TestSetGenerator):
         self.difficulty_levels = difficulty_levels or ["basic", "intermediate", "advanced"]
         self.question_types = question_types or ["factual", "conceptual", "analytical", "comparative"]
     
-    def filter_inputs(self, inputs: List[TestInput]) -> List[TestInput]:
+    def filter_inputs(self, inputs: List[TestItem]) -> List[TestItem]:
         """Filter the generated inputs."""
         filtered_inputs = []
         

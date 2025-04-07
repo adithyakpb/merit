@@ -9,7 +9,7 @@ The `OpenAIClient` provides a specialized client for interacting with OpenAI's A
 To use the OpenAI client, you need:
 
 1. An OpenAI API key (get one at [OpenAI's website](https://platform.openai.com/api-keys))
-2. The Merit package installed
+2. The MERIT package installed
 
 ## Basic Usage
 
