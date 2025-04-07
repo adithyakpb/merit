@@ -1,5 +1,5 @@
 """
-Merit Knowledge Module
+MERIT Knowledge Module
 
 This module provides functionality for working with knowledge bases.
 """
