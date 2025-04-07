@@ -1,7 +1,7 @@
 """
 Base API Client Interface
 
-This module defines the base interfaces for all API clients and configurations in the Merit system.
+This module defines the base interfaces for all API clients and configurations in the MERIT system.
 """
 
 from abc import ABC, abstractmethod

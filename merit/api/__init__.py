@@ -1,5 +1,5 @@
 """
-Merit API Client Module
+MERIT API Client Module
 
 This module provides API client implementations for interacting with various LLM APIs.
 """
