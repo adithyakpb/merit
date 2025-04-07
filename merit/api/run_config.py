@@ -7,7 +7,7 @@ This module provides Adaptive Delay and Exponential Backoff functionality for AP
 import time
 import threading
 import os
-from typing import Optional, Callable, Any
+from typing import Callable, Any
 from functools import wraps
 
 from merit.core.logging import get_logger
