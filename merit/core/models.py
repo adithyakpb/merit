@@ -1,8 +1,8 @@
 """
-Merit Core Models
+MERIT Core Models
 
-This module contains the core data models used in the Merit system.
-These models represent documents, inputs, test sets, and example inputs for evaluation.
+This module contains the core data models used in MERIT.
+These models represent documents, inputs, responses, test sets, and example inputs for evaluation.
 """
 
 import json
@@ -16,7 +16,49 @@ from .logging import get_logger
 
 logger = get_logger(__name__)
 
-
+@dataclass
+class Input:
+    """
+    A class representing an input to the evaluated system.
+    
+    Attributes:
+        content: The input content
+        metadata: Additional metadata
+    """
+    
+    def __init__(self, content: str, metadata: Optional[Dict[str, Any]] = None):
+        """
+        Initialize the input.
+        
+        Args:
+            content: The input content
+            metadata: Additional metadata
+        """
+        self.content = content
+        self.metadata = metadata or {}
+@dataclass
+class Response:
+    """
+    A class representing a response from the evaluated system.
+    
+    Attributes:
+        message: The answer content
+        documents: The documents used to generate the answer
+        metadata: Additional metadata
+    """
+    
+    def __init__(self, content, documents=None, metadata=None):
+        """
+        Initialize the agent answer.
+        
+        Args:
+            message: The answer content
+            documents: The documents used to generate the answer
+            metadata: Additional metadata
+        """
+        self.content = content
+        self.documents = documents
+        self.metadata = metadata or {}
 @dataclass
 class Document:
     """
@@ -24,15 +66,15 @@ class Document:
     
     A 'document' in your knowledge base is a single 'chunk' of text content. Chunk the content knowledge base into documents that are small enough to be processed by the model in a single step. For example, a document could be a single paragraph, a section of a webpage, a single sentence, or a single list item. 
     
-    The model will process each document independently, so it's important to chunk the content in a way that makes sense for the model to process.
+    MERIT will process each document independently, so it's important to chunk the content in a way that makes sense for processing.
     
     Attributes:
         content: The content of the document.
         metadata: Metadata about the document.
         id: The ID of the document.
-        embeddings: The embeddings of the document.
-        reduced_embeddings: The reduced embeddings of the document for visualization.
-        topic_id: The ID of the topic the document belongs to.
+        embeddings: (Optional) The embeddings of the document.
+        reduced_embeddings: (Optional) The reduced embeddings of the document for visualization.
+        topic_id: (Optional) The ID of the topic the document belongs to.
     """
     
     content: str
@@ -48,20 +90,21 @@ class Document:
 
 
 @dataclass
-class TestInput:
+class TestItem:
     """
     A input sample in a test set.
     
     Attributes:
         input: The input text.
-        reference_answer: The reference answer.
+        reference_answer: The reference answer as a Response object.
         document: The document the input is based on.
         id: The ID of the input sample.
         metadata: Additional metadata about the input sample.
     """
-    
-    input: str
-    reference_answer: str
+    #TODO create a Input object with empty metadata and contents if the input is str
+    input: str | Input
+    #TODO create a Response object with empty metadata and contents if the input is str
+    reference_answer: str | Response
     document: Document
     id: str = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -72,7 +115,7 @@ class TestInput:
     
     def to_dict(self) -> Dict[str, Any]:
         """
-        Convert the input sample to a dictionary.
+        Convert the Test Item to a dictionary.
         
         Returns:
             Dict[str, Any]: The input sample as a dictionary.
@@ -85,9 +128,9 @@ class TestInput:
             "document_content": self.document.content,
             "metadata": self.metadata,
         }
-    
+    #TODO arguments for mapping keys of dict to the parameters of constructor  
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], document: Optional[Document] = None) -> 'TestInput':
+    def from_dict(cls, data: Dict[str, Any], document: Optional[Document] = None) -> 'TestItem':
         """
         Create a input sample from a dictionary.
         
@@ -96,7 +139,7 @@ class TestInput:
             document: The document the input is based on.
             
         Returns:
-            TestInput: The created input sample.
+            TestItem: The created input sample.
         """
         # If document is not provided, create a dummy document
         if document is None:
@@ -121,11 +164,11 @@ class TestSet:
     A test set for RAG evaluation.
     
     Attributes:
-        inputs: The inputs in the test set, as a list of TestInput objects.
+        inputs: The inputs in the test set, as a list of TestItem objects.
         metadata: Additional metadata about the test set.
     """
     
-    inputs: List[TestInput]
+    inputs: List[TestItem]
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -160,7 +203,7 @@ class TestSet:
                 document = documents.get(q_data["document_id"])
             
             # Create input sample
-            input = TestInput.from_dict(q_data, document)
+            input = TestItem.from_dict(q_data, document)
             inputs.append(input)
         
         return cls(
@@ -240,11 +283,11 @@ class TestSet:
                                 id=document_id
                             )
                         
-                        # Create TestInput
+                        # Create TestItem
                         metadata = {k: v for k, v in row.items() 
                                    if k not in ['input', 'reference_answer', 'document_id', 'document_content']}
                         
-                        test_input = TestInput(
+                        test_input = TestItem(
                             input=input_text,
                             reference_answer=reference_answer,
                             document=document,
@@ -269,7 +312,7 @@ class TestSet:
 
 
 @dataclass
-class ExampleInput:
+class ExampleItem:
     """
     An example input provided by the user.
     
@@ -282,8 +325,8 @@ class ExampleInput:
     """
     
     input: str
-    reference_answer: Optional[str] = None
-    response: Optional[str] = None
+    reference_answer: Optional[Response | str] = None
+    response: Optional[Response | str] = None
     feedback: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     
@@ -298,10 +341,9 @@ class ExampleInput:
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ExampleInput':
+    def from_dict(cls, data: Dict[str, Any]) -> 'ExampleItem':
         """Create from dictionary."""
         if isinstance(data, str):
-            # Handle case where data is just a input string
             return cls(input=data)
         
         return cls(
@@ -320,19 +362,19 @@ class ExampleSet:
     
     Attributes:
         inputs: The example inputs. Can be:
-            - A list of ExampleInput objects
+            - A list of ExampleItem objects
             - A list of strings (inputs)
             - A list of dictionaries (structured inputs)
             - A dictionary with a "inputs" key
             - A file path (string) to a JSON file
-            - A single ExampleInput object
+            - A single ExampleItem object
         metadata: Additional metadata.
         remove_similar: Whether to remove similar inputs during initialization.
         similarity_threshold: Threshold for similarity detection.
         client: The API client to use for embeddings (required if remove_similar is True).
     """
     
-    inputs: Union[List[ExampleInput], List[str], List[Dict[str, Any]], Dict[str, Any], str, ExampleInput]
+    inputs: Union[List[ExampleItem], List[str], List[Dict[str, Any]], Dict[str, Any], str, ExampleItem]
     metadata: Dict[str, Any] = field(default_factory=dict)
     remove_similar: bool = False
     similarity_threshold: float = 0.85
@@ -340,19 +382,19 @@ class ExampleSet:
     
     def __post_init__(self):
         """Process the inputs after initialization if needed."""
-        # Process the input if it's not already a list of ExampleInput objects
+        # Process the input if it's not already a list of ExampleItem objects
         if not (isinstance(self.inputs, list) and 
-                all(isinstance(q, ExampleInput) for q in self.inputs)):
+                all(isinstance(q, ExampleItem) for q in self.inputs)):
             self.inputs = self._process_input(self.inputs)
         
         # Remove similar inputs if requested and client is provided
         if self.remove_similar and self.client and len(self.inputs) > 1:
             self._remove_similar_inputs()
     
-    def _process_input(self, input_data) -> List[ExampleInput]:
-        """Convert various input formats to a list of ExampleInput objects."""
-        # If it's a single ExampleInput, wrap it in a list
-        if isinstance(input_data, ExampleInput):
+    def _process_input(self, input_data) -> List[ExampleItem]:
+        """Convert various input formats to a list of ExampleItem objects."""
+        # If it's a single ExampleItem, wrap it in a list
+        if isinstance(input_data, ExampleItem):
             return [input_data]
         
         # If it's a string (file path), load from file
@@ -366,9 +408,9 @@ class ExampleSet:
                 logger.error(f"Failed to load example inputs from file: {str(e)}")
                 return []
         
-        # If it's a list of strings, dictionaries, or ExampleInput objects
+        # If it's a list of strings, dictionaries, or ExampleItem objects
         if isinstance(input_data, list):
-            return [q if isinstance(q, ExampleInput) else ExampleInput.from_dict(q) for q in input_data]
+            return [q if isinstance(q, ExampleItem) else ExampleItem.from_dict(q) for q in input_data]
         
         # If it's a dictionary with a "inputs" key
         if isinstance(input_data, dict) and "inputs" in input_data:
@@ -403,7 +445,7 @@ class ExampleSet:
     
     def _remove_similar_inputs(self):
         """Remove similar inputs from the set."""
-        from ..evaluation.generation.generator import remove_similar_inputs
+        from ..testset_generation.generator import remove_similar_inputs
         
         # Extract input texts
         input_texts = [q.input for q in self.inputs]
@@ -422,7 +464,6 @@ class ExampleSet:
                 idx = input_texts.index(text)
                 filtered_indices.append(idx)
             except ValueError:
-                # This shouldn't happen, but just in case
                 continue
         
         # Update inputs
@@ -445,3 +486,6 @@ class ExampleSet:
         except Exception as e:
             logger.error(f"Failed to save example inputs: {e}")
             return False
+
+
+    

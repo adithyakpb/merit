@@ -1,7 +1,7 @@
 """
-Merit Caching Module
+MERIT Caching Module
 
-This module provides caching functionality for the Merit system.
+This module provides caching functionality for the MERIT system.
 It supports both in-memory caching and optional cachetools integration.
 """
 

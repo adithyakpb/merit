@@ -1,7 +1,7 @@
 """
-Merit Universal Logging System
+MERIT Universal Logging System
 
-This module provides a comprehensive logging system for the Merit package.
+This module provides a comprehensive logging system for the MERIT package.
 It ensures all logs include source information, timezone, and supports loop progress tracking.
 All logs are directed to the same file, regardless of which module they come from.
 """
@@ -16,13 +16,13 @@ from logging.handlers import RotatingFileHandler
 # Thread-local storage for loop context
 _thread_local = threading.local()
 
-class MeritLogger(logging.Logger):
+class MERITLogger(logging.Logger):
     """
     Enhanced logger that includes source information, timezone, and loop progress tracking.
     """
     
     def __init__(self, name: str, level: int = logging.NOTSET):
-        """Initialize the MeritLogger with the given name and level."""
+        """Initialize the MERITLogger with the given name and level."""
         super().__init__(name, level)
     
     def _log(self, level, msg, args, exc_info=None, extra=None, stack_info=False, stacklevel=1):
@@ -84,7 +84,7 @@ def setup_logging(
     backup_count: int = 5
 ) -> None:
     """
-    Set up the Merit logging system.
+    Set up the MERIT logging system.
     
     Args:
         log_file: Path to the log file
@@ -93,7 +93,7 @@ def setup_logging(
         backup_count: Number of backup log files to keep
     """
     # Register our custom logger class
-    logging.setLoggerClass(MeritLogger)
+    logging.setLoggerClass(MERITLogger)
     
     # Create a custom log record factory to add timezone information
     original_factory = logging.getLogRecordFactory()
@@ -152,18 +152,18 @@ def setup_logging(
     sys.excepthook = global_exception_handler
     
     # Log configuration details
-    root_logger.info(f"Merit logging configured: file={log_file}, level={log_level}")
+    root_logger.info(f"MERIT logging configured: file={log_file}, level={log_level}")
 
 
 # Helper function to get a logger
-def get_logger(name: str) -> MeritLogger:
+def get_logger(name: str) -> MERITLogger:
     """
-    Get a MeritLogger instance.
+    Get a MERITLogger instance.
     
     Args:
         name: Logger name (typically __name__)
         
     Returns:
-        MeritLogger: A configured MeritLogger instance
+        MERITLogger: A configured MERITLogger instance
     """
     return logging.getLogger(name)
