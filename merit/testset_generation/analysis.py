@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Tuple, Union
 from ..core.cache import cache_analysis, is_caching_available
 from ..core.logging import get_logger
 from ..core.utils import parse_json
-from ..core.models import ExampleInputSet
+from ..core.models import ExampleItemSet
 from ..core.prompts import INPUT_STYLE_ANALYSIS_PROMPT
 
 logger = get_logger(__name__)
@@ -31,7 +31,7 @@ def analyze_examples(
     analyze_example_inputs into a single unified interface.
 
     Args:
-        inputs: List of input strings or ExampleInputSet to analyze
+        inputs: List of input strings or ExampleItemSet to analyze
         client: The GenericAPIClient for text generation (required for LLM-based analysis)
         use_llm: Whether to use LLM for advanced style analysis
         max_inputs_for_llm: Maximum number of inputs to send to LLM
@@ -255,7 +255,7 @@ def _create_sub_clusters(features: np.ndarray, clustering_results: Dict[str, Any
     return sub_clusters
 
 def select_representative_examples(
-    inputs: Union[List[str], 'ExampleInputSet'], 
+    inputs: Union[List[str], 'ExampleItemSet'], 
     max_examples: int = 5,
     client: Any = None,
     method: str = "hybrid",

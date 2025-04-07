@@ -1,5 +1,5 @@
 """
-Merit RAG Test Set Generator
+MERIT RAG Test Set Generator
 
 This module provides a class-based approach for generating test sets for RAG evaluation.
 It encapsulates the functionality for test set generation in an object-oriented design.
@@ -14,7 +14,7 @@ import threading
 from functools import partial
 from typing import Dict, Any, List, Optional, Union, Tuple, Callable
 
-from ..core.models import TestSet, TestInput, ExampleInput, ExampleSet, Document
+from ..core.models import TestSet, TestItem, ExampleItem, ExampleSet, Document
 from ..knowledge.knowledgebase import KnowledgeBase
 from ..core.utils import batch_iterator, parse_json
 from ..core.logging import get_logger
@@ -66,7 +66,7 @@ class TestSetGenerator:
     def generate(
         self,
         num_inputs: int = DEFAULT_NUM_INPUTS,
-        example_inputs: Optional[Union[str, List[Dict[str, Any]], List[str], Dict[str, Any], ExampleInput, ExampleSet]] = None,
+        example_inputs: Optional[Union[str, List[Dict[str, Any]], List[str], Dict[str, Any], ExampleItem, ExampleSet]] = None,
         remove_similar_examples: bool = False,
         similarity_threshold: float = 0.85,
         skip_relevance_check: bool = False,
@@ -79,7 +79,7 @@ class TestSetGenerator:
             example_inputs: Optional example inputs to guide generation.
                 Can be:
                 - An ExampleSet object
-                - An ExampleInput object
+                - An ExampleItem object
                 - A file path (string) to a JSON file containing example inputs
                 - A list of strings (inputs)
                 - A list of dictionaries (structured inputs)
@@ -161,7 +161,7 @@ class TestSetGenerator:
                                 language=self.language,
                             )
                             
-                            test_input = TestInput(
+                            test_input = TestItem(
                                 input=input_text,
                                 reference_answer=reference_answer,
                                 document=doc,
@@ -213,8 +213,8 @@ class TestSetGenerator:
         """
         logger.info(f"Generating {num_inputs} standard inputs")
         
-        # Import TestInput and Document here to ensure they're in scope
-        from ..core.models import TestInput, Document, TestSet
+        # Import TestItem and Document here to ensure they're in scope
+        from ..core.models import TestItem, Document, TestSet
         
         # Calculate number of documents to sample
         num_docs = min(len(self.knowledge_base), (num_inputs + DEFAULT_INPUTS_PER_DOCUMENT - 1) // DEFAULT_INPUTS_PER_DOCUMENT)
@@ -271,7 +271,7 @@ class TestSetGenerator:
                     language=self.language,
                 )
                 
-                return TestInput(
+                return TestItem(
                     input=input_text,
                     reference_answer=reference_answer,
                     document=doc,
@@ -374,7 +374,7 @@ class TestSetGenerator:
     
     def _process_inputs_only(
         self,
-        example_inputs: List[ExampleInput],
+        example_inputs: List[ExampleItem],
         options: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
@@ -517,7 +517,7 @@ class TestSetGenerator:
                     language=options.get("language", "en"),
                 )
                 
-                return TestInput(
+                return TestItem(
                     input=input_text,
                     reference_answer=reference_answer,
                     document=doc,
@@ -574,7 +574,7 @@ class TestSetGenerator:
     
     def _process_inputs_with_responses(
         self,
-        example_inputs: List[ExampleInput],
+        example_inputs: List[ExampleItem],
         options: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
@@ -652,7 +652,7 @@ class TestSetGenerator:
                 )
                 
                 # Create input sample
-                sample = TestInput(
+                sample = TestItem(
                     input=q.input,
                     reference_answer=q.reference_answer,
                     document=doc,
@@ -696,7 +696,7 @@ class TestSetGenerator:
     
     def _process_inputs_with_reference_answers(
         self,
-        example_inputs: List[ExampleInput],
+        example_inputs: List[ExampleItem],
         options: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
@@ -756,7 +756,7 @@ class TestSetGenerator:
                 )
                 
                 # Create input sample
-                sample = TestInput(
+                sample = TestItem(
                     input=q.input,
                     reference_answer=q.reference_answer,
                     document=doc,
