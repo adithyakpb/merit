@@ -24,41 +24,90 @@ class Input:
     Attributes:
         content: The input content
         metadata: Additional metadata
+        id: The ID of the input
     """
     
-    def __init__(self, content: str, metadata: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the input.
+    content: str
+    metadata: Dict[str, Any] = field(default_factory=dict) 
+    id: str = None
+    
+    def __post_init__(self):
+        if self.id is None:
+            self.id = str(uuid.uuid4())
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "content": self.content,
+            "metadata": self.metadata,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Input':
+        """Create from dictionary."""
+        if isinstance(data, str):
+            return cls(content=data)
         
-        Args:
-            content: The input content
-            metadata: Additional metadata
-        """
-        self.content = content
-        self.metadata = metadata or {}
+        return cls(
+            id=data.get("id"),
+            content=data.get("content", ""),
+            metadata=data.get("metadata", {}),
+        )
+
+
 @dataclass
 class Response:
     """
     A class representing a response from the evaluated system.
     
     Attributes:
-        message: The answer content
+        content: The answer content
         documents: The documents used to generate the answer
         metadata: Additional metadata
+        id: The ID of the response
     """
     
-    def __init__(self, content, documents=None, metadata=None):
+    content: str
+    documents: Optional[List[Any]] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    id: str = None
+    
+    def __post_init__(self):
+        if self.id is None:
+            self.id = str(uuid.uuid4())
+    
+    @property
+    def message(self) -> str:
         """
-        Initialize the agent answer.
+        Get the message content (alias for content).
         
-        Args:
-            message: The answer content
-            documents: The documents used to generate the answer
-            metadata: Additional metadata
+        Returns:
+            str: The content of the response
         """
-        self.content = content
-        self.documents = documents
-        self.metadata = metadata or {}
+        return self.content
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "content": self.content,
+            "documents": self.documents,
+            "metadata": self.metadata,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Response':
+        """Create from dictionary."""
+        if isinstance(data, str):
+            return cls(content=data)
+        
+        return cls(
+            id=data.get("id"),
+            content=data.get("content", ""),
+            documents=data.get("documents"),
+            metadata=data.get("metadata", {}),
+        )
 @dataclass
 class Document:
     """
@@ -101,9 +150,7 @@ class TestItem:
         id: The ID of the input sample.
         metadata: Additional metadata about the input sample.
     """
-    #TODO create a Input object with empty metadata and contents if the input is str
     input: str | Input
-    #TODO create a Response object with empty metadata and contents if the input is str
     reference_answer: str | Response
     document: Document
     id: str = None
@@ -112,6 +159,14 @@ class TestItem:
     def __post_init__(self):
         if self.id is None:
             self.id = str(uuid.uuid4())
+        
+        # Convert string input to Input object
+        if isinstance(self.input, str):
+            self.input = Input(content=self.input)
+        
+        # Convert string reference_answer to Response object
+        if isinstance(self.reference_answer, str):
+            self.reference_answer = Response(content=self.reference_answer)
     
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -120,15 +175,18 @@ class TestItem:
         Returns:
             Dict[str, Any]: The input sample as a dictionary.
         """
+        # Convert Input and Response objects to their dictionary representations
+        input_data = self.input.to_dict() if hasattr(self.input, 'to_dict') else self.input
+        ref_answer_data = self.reference_answer.to_dict() if hasattr(self.reference_answer, 'to_dict') else self.reference_answer
+        
         return {
             "id": self.id,
-            "input": self.input,
-            "reference_answer": self.reference_answer,
+            "input": input_data,
+            "reference_answer": ref_answer_data,
             "document_id": self.document.id,
             "document_content": self.document.content,
             "metadata": self.metadata,
         }
-    #TODO arguments for mapping keys of dict to the parameters of constructor  
     @classmethod
     def from_dict(cls, data: Dict[str, Any], document: Optional[Document] = None) -> 'TestItem':
         """
@@ -149,10 +207,24 @@ class TestItem:
                 id=data.get("document_id"),
             )
         
+        # Get input data
+        input_data = data.get("input", "")
+        if isinstance(input_data, dict):
+            input_obj = Input.from_dict(input_data)
+        else:
+            input_obj = input_data
+        
+        # Get reference answer data
+        ref_answer_data = data.get("reference_answer", "")
+        if isinstance(ref_answer_data, dict):
+            ref_answer_obj = Response.from_dict(ref_answer_data)
+        else:
+            ref_answer_obj = ref_answer_data  # Will be converted to Response in __post_init__
+        
         return cls(
             id=data.get("id"),
-            input=data.get("input", ""),
-            reference_answer=data.get("reference_answer", ""),
+            input=input_obj,
+            reference_answer=ref_answer_obj,
             document=document,
             metadata=data.get("metadata", {}),
         )
@@ -332,13 +404,27 @@ class ExampleItem:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
+        # Convert Response objects to their dictionary representations
+        ref_answer_data = self.reference_answer.to_dict() if hasattr(self.reference_answer, 'to_dict') else self.reference_answer
+        response_data = self.response.to_dict() if hasattr(self.response, 'to_dict') else self.response
+        
         return {
             "input": self.input,
-            "reference_answer": self.reference_answer,
-            "response": self.response,
+            "reference_answer": ref_answer_data,
+            "response": response_data,
             "feedback": self.feedback,
             "metadata": self.metadata,
         }
+    
+    def __post_init__(self):
+        """Process the inputs after initialization if needed."""
+        # Convert string reference_answer to Response object
+        if isinstance(self.reference_answer, str):
+            self.reference_answer = Response(content=self.reference_answer)
+        
+        # Convert string response to Response object
+        if isinstance(self.response, str):
+            self.response = Response(content=self.response)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ExampleItem':
@@ -346,10 +432,24 @@ class ExampleItem:
         if isinstance(data, str):
             return cls(input=data)
         
+        # Get reference answer data
+        ref_answer_data = data.get("reference_answer")
+        if isinstance(ref_answer_data, dict):
+            ref_answer_obj = Response.from_dict(ref_answer_data)
+        else:
+            ref_answer_obj = ref_answer_data  # Will be converted to Response in __post_init__ if it's a string
+        
+        # Get response data
+        response_data = data.get("response")
+        if isinstance(response_data, dict):
+            response_obj = Response.from_dict(response_data)
+        else:
+            response_obj = response_data  # Will be converted to Response in __post_init__ if it's a string
+        
         return cls(
             input=data.get("input", ""),
-            reference_answer=data.get("reference_answer"),
-            response=data.get("response"),
+            reference_answer=ref_answer_obj,
+            response=response_obj,
             feedback=data.get("feedback"),
             metadata=data.get("metadata", {}),
         )
@@ -486,6 +586,3 @@ class ExampleSet:
         except Exception as e:
             logger.error(f"Failed to save example inputs: {e}")
             return False
-
-
-    

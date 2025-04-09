@@ -5,7 +5,7 @@ from typing import Any
 from merit.core.logging import get_logger
 
 logger = get_logger(__name__)
-#TODO add a log for when the function is called
+
 def parse_json(text: str, return_type: str = "any") -> Any:
     """
     Parse a JSON string with fallbacks for common errors, optionally extracting specific structures.
@@ -18,7 +18,7 @@ def parse_json(text: str, return_type: str = "any") -> Any:
         Any: The parsed JSON data, with type based on return_type parameter.
     """
     import re
-    
+    logger.debug(f"Parsing JSON text: {text} with return type '{return_type}'")
     # Helper function to handle return type conversion
     def handle_return_type(parsed_data):
         if return_type == "array" and not isinstance(parsed_data, list):

@@ -9,6 +9,7 @@ from ...core.logging import get_logger
 
 logger = get_logger(__name__)
 
+#NOTE we need to add a schema that every metric calcuation output follows
 class BaseMetric(ABC):
     """Base class for all metrics."""
     name = "Base Metric"

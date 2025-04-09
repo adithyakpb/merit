@@ -141,7 +141,7 @@ class LLMEvaluator(BaseEvaluator):
                     result.hallucinations = metric_value
         
         return result
-    # TODO what is this
+    # NOTE what is this
     # NOTE we should try doing this as Input-Response Pairs  
     def _format_messages(self, model, conversation, meta=None):
         """
@@ -163,7 +163,7 @@ class LLMEvaluator(BaseEvaluator):
         """
         # Format conversation into a string
         formatted_conversation = ""
-        #TODO what is this 
+        #NOTE what is this 
         for message in conversation:
             role = message.get("role", "").lower()
             content = message.get("content", "")

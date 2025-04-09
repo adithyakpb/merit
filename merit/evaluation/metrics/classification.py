@@ -81,19 +81,17 @@ class ClassificationPerformanceMetric(BaseMetric):
             "fn": sum((y_t == 1 and y_p == 0) for y_t, y_p in zip(y_true, y_pred))
         }
 
-#TODO base class of LLM calclated Metric
-class LLMMeasuredMetric(BaseMetric):
+class LLMMeasuredBaseMetric(BaseMetric):
     """Base class for metrics that are calculated using an LLM."""
     def __call__(self, test_item: TestItem, response, client_llm_callable: callable, prompt: "Prompt"):
         """
-        Calculate the metric for a model on a dataset.
+        Calculate the metric for a TestItem and Response Pair using a LLM call.
         
         Args:
             test_item: The test item to evaluate
             response: The evaluated system's response
             client: The client to use for the evaluation
             prompt: The prompt to use for the evaluation
-            
             
         Returns:
             dict: A dictionary with the metric value and additional information
