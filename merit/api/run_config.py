@@ -1,16 +1,25 @@
 """
 Run Configuration for API Calls
 
-This module provides Adaptive Delay and Exponential Backoff functionality for API calls.
+This module provides Adaptive Delay, Exponential Backoff, and Retry functionality for API calls.
 """
 
 import time
 import threading
 import os
-from typing import Callable, Any
+import random
+from typing import Callable, Any, Optional, Union, List, Tuple, Type
 from functools import wraps
 
+import requests
+
 from merit.core.logging import get_logger
+from merit.api.errors import (
+    APIConnectionError,
+    APIRateLimitError,
+    APIServerError,
+    APITimeoutError,
+)
 
 logger = get_logger(__name__)
 
@@ -206,3 +215,189 @@ def adaptive_throttle(f: Callable) -> Callable:
             raise
     
     return wrapper
+
+
+def with_retry(
+    max_retries: int = 3,
+    backoff_factor: float = 0.5,
+    jitter: bool = True,
+    retry_on: Optional[Union[Type[Exception], Tuple[Type[Exception], ...], List[Type[Exception]]]] = None,
+    retry_status_codes: Optional[List[int]] = None,
+):
+    """
+    Decorator that adds retry functionality to API methods.
+    
+    This decorator handles transient failures by automatically retrying failed API calls
+    with exponential backoff. It works alongside the adaptive_throttle decorator to provide
+    a comprehensive solution for handling API rate limits and transient errors.
+    
+    Args:
+        max_retries: Maximum number of retries (default: 3)
+        backoff_factor: Backoff factor for exponential backoff (default: 0.5)
+        jitter: Whether to add random jitter to the backoff time (default: True)
+        retry_on: Exception types to retry on (default: ConnectionError, Timeout, ServerError)
+        retry_status_codes: HTTP status codes to retry on (default: 429, 500, 502, 503, 504)
+        
+    Returns:
+        Decorated function with retry logic
+    
+    Usage:
+        @with_retry(max_retries=5, backoff_factor=1.0)
+        def my_api_function(self, ...):
+            # Function implementation
+    """
+    # Default exceptions to retry on
+    if retry_on is None:
+        retry_on = (
+            APIConnectionError, 
+            APITimeoutError, 
+            APIServerError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ReadTimeout,
+        )
+    
+    # Default status codes to retry on
+    if retry_status_codes is None:
+        retry_status_codes = [429, 500, 502, 503, 504]
+    
+    def decorator(func: Callable):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            retries = 0
+            last_exception = None
+            
+            while retries <= max_retries:
+                try:
+                    return func(*args, **kwargs)
+                except retry_on as e:
+                    # Check if it's an HTTP error with a status code
+                    should_retry = True
+                    retry_after = None
+                    status_code = None
+                    
+                    if isinstance(e, requests.exceptions.HTTPError) and hasattr(e, 'response'):
+                        status_code = e.response.status_code
+                        should_retry = status_code in retry_status_codes
+                        
+                        # Check for Retry-After header
+                        if should_retry and status_code == 429 and 'Retry-After' in e.response.headers:
+                            try:
+                                retry_after = int(e.response.headers['Retry-After'])
+                            except (ValueError, TypeError):
+                                # If Retry-After header is not an integer, use the backoff formula
+                                pass
+                    
+                    if retries >= max_retries or not should_retry:
+                        # If we've exceeded max retries or shouldn't retry this error, re-raise
+                        raise
+                    
+                    # Calculate backoff time
+                    if retry_after is not None:
+                        wait_time = retry_after
+                    else:
+                        wait_time = backoff_factor * (2 ** retries)
+                        if jitter:
+                            # Add random jitter (up to 25% of the backoff time)
+                            wait_time += wait_time * random.uniform(0, 0.25)
+                    
+                    # Log the retry
+                    logger.warning(
+                        f"API call failed with {type(e).__name__}{' (Status: ' + str(status_code) + ')' if status_code else ''}, "
+                        f"retrying in {wait_time:.2f} seconds (retry {retries+1}/{max_retries})"
+                    )
+                    
+                    # Wait before retrying
+                    time.sleep(wait_time)
+                    retries += 1
+                    last_exception = e
+                except Exception as e:
+                    # Don't retry on other exceptions
+                    raise
+            
+            # If we get here, we've exhausted our retries
+            if last_exception is not None:
+                # Convert to API-specific error if it's a requests exception
+                if isinstance(last_exception, requests.exceptions.ConnectionError):
+                    raise APIConnectionError(
+                        "Failed to connect to the API service after multiple retries.",
+                        details={"original_error": str(last_exception), "retries": retries}
+                    ) from last_exception
+                elif isinstance(last_exception, requests.exceptions.Timeout):
+                    raise APITimeoutError(
+                        "API request timed out after multiple retries.",
+                        details={"original_error": str(last_exception), "retries": retries}
+                    ) from last_exception
+                elif isinstance(last_exception, requests.exceptions.HTTPError) and hasattr(last_exception, 'response'):
+                    # Handle rate limiting specifically
+                    if last_exception.response.status_code == 429:
+                        retry_after = None
+                        if 'Retry-After' in last_exception.response.headers:
+                            try:
+                                retry_after = int(last_exception.response.headers['Retry-After'])
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        raise APIRateLimitError(
+                            "API rate limit exceeded and not resolved after multiple retries.",
+                            details={"original_error": str(last_exception), "retries": retries},
+                            retry_after=retry_after
+                        ) from last_exception
+                    elif last_exception.response.status_code >= 500:
+                        raise APIServerError(
+                            "API server error persisted after multiple retries.",
+                            details={"original_error": str(last_exception), "retries": retries, 
+                                    "status_code": last_exception.response.status_code}
+                        ) from last_exception
+                
+                # If we can't convert it, re-raise the original
+                raise last_exception
+            
+            # This should never happen, but just in case
+            raise APIConnectionError(
+                "Failed after multiple retries with an unknown error.",
+                details={"retries": retries}
+            )
+        
+        return wrapper
+    
+    return decorator
+
+
+def with_adaptive_retry(
+    max_retries: int = 3,
+    backoff_factor: float = 0.5,
+    jitter: bool = True,
+):
+    """
+    Decorator that combines adaptive throttling and retry functionality.
+    
+    This decorator applies both adaptive_throttle and with_retry decorators
+    to provide a comprehensive solution for API rate limiting and transient error handling.
+    
+    Args:
+        max_retries: Maximum number of retries
+        backoff_factor: Backoff factor for exponential backoff
+        jitter: Whether to add random jitter to the backoff time
+        
+    Returns:
+        Decorated function with adaptive throttling and retry logic
+        
+    Usage:
+        @with_adaptive_retry(max_retries=5, backoff_factor=1.0)
+        def my_api_function(self, ...):
+            # Function implementation
+    """
+    def decorator(func: Callable):
+        # Apply the decorators in the correct order:
+        # 1. with_retry (innermost) - handles retries for transient errors
+        # 2. adaptive_throttle (outermost) - handles rate limiting
+        retry_func = with_retry(
+            max_retries=max_retries, 
+            backoff_factor=backoff_factor,
+            jitter=jitter
+        )(func)
+        
+        return adaptive_throttle(retry_func)
+    
+    return decorator
