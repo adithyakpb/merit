@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Tuple, Union
 from ..core.cache import cache_analysis, is_caching_available
 from ..core.logging import get_logger
 from ..core.utils import parse_json
-from ..core.models import ExampleItemSet
-from ..core.prompts import INPUT_STYLE_ANALYSIS_PROMPT
+from ..core.models import Document
+from ..testset_generation.prompts import INPUT_STYLE_ANALYSIS_PROMPT
 
 logger = get_logger(__name__)
 

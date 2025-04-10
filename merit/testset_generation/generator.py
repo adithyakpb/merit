@@ -15,14 +15,13 @@ from functools import partial
 from typing import Dict, Any, List, Optional, Union, Tuple, Callable
 
 from ..core.models import TestSet, TestItem, ExampleItem, ExampleSet, Document
-from ..knowledge.knowledgebase import KnowledgeBase
+from ..knowledge import knowledgebase
 from ..core.utils import batch_iterator, parse_json
 from ..core.logging import get_logger
-from ..core.prompts import (
+from ..testset_generation.prompts import (
     INPUT_GENERATION_PROMPT, 
     REFERENCE_ANSWER_PROMPT,
     STYLE_ANALYSIS_PROMPT,
-    EXAMPLE_MATCHED_INPUT_PROMPT,
     INPUT_STYLE_ANALYSIS_PROMPT,
     ADAPTIVE_INPUT_GENERATION_PROMPT
 )
@@ -44,7 +43,7 @@ class TestSetGenerator:
     
     def __init__(
         self,
-        knowledge_base: KnowledgeBase,
+        knowledge_base: knowledgebase.KnowledgeBase,
         language: str = "en",
         agent_description: str = "A chatbot that answers inputs based on a knowledge base.",
         batch_size: int = DEFAULT_BATCH_SIZE,
