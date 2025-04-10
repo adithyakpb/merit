@@ -83,6 +83,7 @@ def detect_language(text: str) -> str:
     # Default to English if no other language is detected
     return "en"
 
+
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """
     Calculate the cosine similarity between two vectors.
@@ -141,7 +142,6 @@ def batch_iterator(items: Iterable[T], batch_size: int = 16,
     """
     batch = []
     for i, item in enumerate(items):
-        # Apply processing function if provided
         if process_fn is not None:
             item = process_fn(item)
             
@@ -151,19 +151,47 @@ def batch_iterator(items: Iterable[T], batch_size: int = 16,
             yield batch
             batch = []
 
-def parse_json(text: str, return_type: str = "any") -> Any:
+def parse_json(text: str = None, file_path: str = None, return_type: str = "any") -> Any:
     """
     Parse a JSON string with fallbacks for common errors, optionally extracting specific structures.
     
     Args:
         text: The JSON string to parse.
+        file_path: Path to a JSON file to parse.
         return_type: The desired return type - "any" (default), "array", or "object"
         
     Returns:
         Any: The parsed JSON data, with type based on return_type parameter.
+        
+    Raises:
+        ValueError: If both text and file_path are provided.
+        FileNotFoundError: If the specified file path does not exist.
     """
-    import re
-    logger.debug(f"Parsing JSON text: {text} with return type '{return_type}'")
+    if file_path and text:
+        error_msg = "Cannot provide both text and file_path. Use only one parameter."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+        
+    if file_path and not text:
+        logger.debug(f"Parsing JSON file: {file_path} with return type '{return_type}'")
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+        except FileNotFoundError:
+            logger.error(f"JSON file not found: {file_path}")
+            raise
+        except PermissionError:
+            logger.error(f"Permission denied when accessing JSON file: {file_path}")
+            raise
+        except Exception as e:
+            logger.error(f"Error reading JSON file {file_path}: {str(e)}")
+            raise
+            
+    if not text:
+        logger.warning("No JSON text or file provided.")
+        return [] if return_type == "array" else {}
+        
+    logger.debug(f"Parsing JSON text with return type '{return_type}'")
     # Helper function to handle return type conversion
     def handle_return_type(parsed_data):
         if return_type == "array" and not isinstance(parsed_data, list):
