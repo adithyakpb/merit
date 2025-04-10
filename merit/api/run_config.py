@@ -8,6 +8,7 @@ import time
 import threading
 import os
 import random
+import inspect
 from typing import Callable, Any, Optional, Union, List, Tuple, Type
 from functools import wraps
 
@@ -74,6 +75,7 @@ class AdaptiveDelay:
         self.total_failures = 0
         self.total_wait_time = 0
         self.start_time = time.time()
+        self.last_used = time.time()  # Added tracking of last usage time
         
         # Lock for thread safety
         self.lock = threading.Lock()
@@ -84,6 +86,9 @@ class AdaptiveDelay:
     def wait(self):
         """Wait for the current delay period and log the delay."""
         with self.lock:
+            # Update last used time
+            self.last_used = time.time()
+            
             # Log current delay before waiting
             logger.info(f"API call delay: {self.current_delay:.3f}s (request #{self.total_requests+1})")
             
@@ -105,6 +110,9 @@ class AdaptiveDelay:
     def success(self):
         """Record a successful API call and potentially decrease delay."""
         with self.lock:
+            # Update last used time
+            self.last_used = time.time()
+            
             self.total_requests += 1
             
             # Decrease delay slightly after success
@@ -131,6 +139,9 @@ class AdaptiveDelay:
     def failure(self):
         """Record a failed API call and increase delay."""
         with self.lock:
+            # Update last used time
+            self.last_used = time.time()
+            
             self.total_requests += 1
             self.total_failures += 1
             
@@ -148,8 +159,65 @@ class AdaptiveDelay:
             )
 
 
-# Dictionary to store adaptive delays for each class
+# Dictionary to store adaptive delays for each class/function
+# Using weak references to allow proper garbage collection
 _class_delays = {}
+_last_cleanup_time = time.time()
+_cleanup_interval = 3600  # Clean up unused entries every hour
+
+def _detect_call_context(args):
+    """
+    Helper function to detect if a function is being called as a class method or standalone function.
+    
+    Args:
+        args: The arguments passed to the function
+        
+    Returns:
+        Tuple of (context_id, call_args):
+        - context_id: String identifier for the calling context (class name or function name)
+        - call_args: Arguments to pass to the wrapped function
+    """
+    if args and hasattr(args[0], '__class__'):
+        # It's likely a class method with 'self' as first argument
+        instance = args[0]
+        context_id = instance.__class__.__name__
+        # Keep the same argument structure for the wrapped function
+        call_args = args
+    else:
+        # It's a standalone function or a class method called without instance
+        # We'll use the calling frame to get information about the caller
+        frame = inspect.currentframe().f_back.f_back  # Go back two frames to get to the caller
+        if frame and 'self' in frame.f_locals:
+            # Called from within a class method but didn't receive self
+            context_id = frame.f_locals['self'].__class__.__name__
+        else:
+            # Truly a standalone function or can't determine context
+            # In this case, we'll use a prefix to avoid collision with class names
+            context_id = "Function"
+        # Keep the same argument structure
+        call_args = args
+    
+    return context_id, call_args
+
+def _cleanup_delays():
+    """Periodically clean up unused delay entries to prevent memory leaks."""
+    global _last_cleanup_time
+    
+    current_time = time.time()
+    if current_time - _last_cleanup_time > _cleanup_interval:
+        # Only clean up if it's been a while since the last cleanup
+        to_delete = []
+        for key, delay in _class_delays.items():
+            # Remove entries that haven't been used in a day
+            if current_time - delay.last_used > 86400:  # 24 hours
+                to_delete.append(key)
+        
+        # Delete the stale entries
+        for key in to_delete:
+            del _class_delays[key]
+        
+        # Update the last cleanup time
+        _last_cleanup_time = current_time
 
 def adaptive_throttle(f: Callable) -> Callable:
     """
@@ -174,25 +242,18 @@ def adaptive_throttle(f: Callable) -> Callable:
     """
     @wraps(f)
     def wrapper(*args, **kwargs) -> Any:
-        # Determine if this is a class method or standalone function
-        if args and hasattr(args[0], '__class__'):
-            # It's likely a class method with 'self' as first argument
-            instance = args[0]
-            class_name = instance.__class__.__name__
-            # Keep the same argument structure for the wrapped function
-            call_args = args
-        else:
-            # It's a standalone function or a class method called without instance
-            class_name = f"Function_{f.__name__}"
-            # Keep the same argument structure for the wrapped function
-            call_args = args
+        # Use the shared context detection helper
+        context_id, call_args = _detect_call_context(args)
         
-        # Get or create the adaptive delay for this class/function
-        if class_name not in _class_delays:
-            _class_delays[class_name] = AdaptiveDelay(use_env=True)
-            logger.info(f"Created adaptive delay for {class_name}")
+        # Trigger periodic cleanup
+        _cleanup_delays()
         
-        adaptive_delay = _class_delays[class_name]
+        # Get or create the adaptive delay for this context
+        if context_id not in _class_delays:
+            _class_delays[context_id] = AdaptiveDelay(use_env=True)
+            logger.info(f"Created adaptive delay for {context_id}")
+        
+        adaptive_delay = _class_delays[context_id]
         
         # Wait before making the API call
         adaptive_delay.wait()
@@ -220,6 +281,8 @@ def adaptive_throttle(f: Callable) -> Callable:
                 is_rate_limit = e.response.status_code in (429, 503)
             elif "Service Temporarily Unavailable" in str(e):
                 is_rate_limit = True
+            elif isinstance(e, APIRateLimitError):
+                is_rate_limit = True
             
             if is_rate_limit:
                 # Record failure to adjust delay
@@ -246,8 +309,7 @@ def with_retry(
     Decorator that adds retry functionality to API methods.
     
     This decorator handles transient failures by automatically retrying failed API calls
-    with exponential backoff. It works alongside the adaptive_throttle decorator to provide
-    a comprehensive solution for handling API rate limits and transient errors.
+    with exponential backoff. It works with both class methods and standalone functions.
     
     Args:
         max_retries: Maximum number of retries (default: 3)
@@ -260,8 +322,14 @@ def with_retry(
         Decorated function with retry logic
     
     Usage:
-        @with_retry(max_retries=5, backoff_factor=1.0)
-        def my_api_function(self, ...):
+        # For class methods
+        @with_retry(max_retries=5)
+        def my_api_method(self, ...):
+            # Method implementation
+            
+        # For standalone functions
+        @with_retry(max_retries=3)
+        def my_api_function(...):
             # Function implementation
     """
     # Default exceptions to retry on
@@ -282,19 +350,26 @@ def with_retry(
     def decorator(func: Callable):
         @wraps(func)
         def wrapper(*args, **kwargs):
+            # Use the shared context detection helper
+            context_id, call_args = _detect_call_context(args)
+            
             retries = 0
             last_exception = None
             
             while retries <= max_retries:
                 try:
-                    return func(*args, **kwargs)
+                    return func(*call_args, **kwargs)
                 except retry_on as e:
                     # Check if it's an HTTP error with a status code
                     should_retry = True
                     retry_after = None
                     status_code = None
                     
-                    if isinstance(e, requests.exceptions.HTTPError) and hasattr(e, 'response'):
+                    # Enhanced detection of rate limit responses
+                    if isinstance(e, APIRateLimitError):
+                        should_retry = True
+                        retry_after = getattr(e, 'retry_after', None)
+                    elif isinstance(e, requests.exceptions.HTTPError) and hasattr(e, 'response'):
                         status_code = e.response.status_code
                         should_retry = status_code in retry_status_codes
                         
@@ -392,6 +467,7 @@ def with_adaptive_retry(
     
     This decorator applies both adaptive_throttle and with_retry decorators
     to provide a comprehensive solution for API rate limiting and transient error handling.
+    Works with both class methods and standalone functions.
     
     Args:
         max_retries: Maximum number of retries
@@ -402,8 +478,14 @@ def with_adaptive_retry(
         Decorated function with adaptive throttling and retry logic
         
     Usage:
-        @with_adaptive_retry(max_retries=5, backoff_factor=1.0)
-        def my_api_function(self, ...):
+        # For class methods
+        @with_adaptive_retry(max_retries=5)
+        def my_api_method(self, ...):
+            # Method implementation
+            
+        # For standalone functions
+        @with_adaptive_retry(max_retries=3)
+        def my_api_function(...):
             # Function implementation
     """
     def decorator(func: Callable):
