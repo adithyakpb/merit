@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Union, Tuple, Sequence
 
 from ..api.base import BaseAPIClient
 from ..core.models import Document
-from ..core.prompts import TOPIC_GENERATION_PROMPT
+from .prompts import TOPIC_GENERATION_PROMPT
 from ..core.utils import detect_language, cosine_similarity, batch_iterator
 from ..core.logging import get_logger
 
