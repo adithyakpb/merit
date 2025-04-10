@@ -162,17 +162,35 @@ def adaptive_throttle(f: Callable) -> Callable:
     4. Provides detailed logging
     
     Usage:
+        # For class methods
         @adaptive_throttle
-        def my_api_function(self, ...):
+        def my_method(self, ...):
+            # Method implementation
+            
+        # For standalone functions
+        @adaptive_throttle
+        def my_function(...):
             # Function implementation
     """
     @wraps(f)
-    def wrapper(self, *args, **kwargs) -> Any:
-        # Get or create the adaptive delay for this class
-        class_name = self.__class__.__name__
+    def wrapper(*args, **kwargs) -> Any:
+        # Determine if this is a class method or standalone function
+        if args and hasattr(args[0], '__class__'):
+            # It's likely a class method with 'self' as first argument
+            instance = args[0]
+            class_name = instance.__class__.__name__
+            # Keep the same argument structure for the wrapped function
+            call_args = args
+        else:
+            # It's a standalone function or a class method called without instance
+            class_name = f"Function_{f.__name__}"
+            # Keep the same argument structure for the wrapped function
+            call_args = args
+        
+        # Get or create the adaptive delay for this class/function
         if class_name not in _class_delays:
             _class_delays[class_name] = AdaptiveDelay(use_env=True)
-            logger.info(f"Created adaptive delay for class {class_name}")
+            logger.info(f"Created adaptive delay for {class_name}")
         
         adaptive_delay = _class_delays[class_name]
         
@@ -184,7 +202,7 @@ def adaptive_throttle(f: Callable) -> Callable:
         
         try:
             # Make the API call
-            result = f(self, *args, **kwargs)
+            result = f(*call_args, **kwargs)
             
             # Record API call duration
             call_duration = time.time() - call_start
