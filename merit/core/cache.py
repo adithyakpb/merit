@@ -77,19 +77,30 @@ else:
     embedding_cache = PassThroughCache(maxsize=EMBEDDING_CACHE_SIZE)
     analysis_cache = PassThroughCache(maxsize=ANALYSIS_CACHE_SIZE, ttl=ANALYSIS_CACHE_TTL)
 
-def content_hash(content: Union[str, List[str]]) -> str:
+def content_hash(content: Union[str, List[str], "ExampleSet"]) -> str:
     """
     Create a hash for content to use as a cache key.
     
     Args:
-        content: The content to hash (string or list of strings)
+        content: The content to hash (string, list of strings, or ExampleSet)
         
     Returns:
         str: A hash string representing the content
     """
-    if isinstance(content, list):
+    if hasattr(content, "examples") and hasattr(content, "to_dict"):
+        # It's an ExampleSet - extract inputs for hashing
+        inputs = [example.input for example in content.examples]
         # Sort to ensure consistent hashing regardless of order
-        content = "|".join(sorted(content))
+        content = "|".join(sorted(inputs))
+    elif isinstance(content, list):
+        # Check if list contains ExampleItem objects
+        if content and hasattr(content[0], "input"):
+            # Extract input strings from ExampleItem objects
+            inputs = [example.input for example in content]
+            content = "|".join(sorted(inputs))
+        else:
+            # Regular list of strings
+            content = "|".join(sorted(content))
     
     return hashlib.md5(content.encode('utf-8')).hexdigest()
 
@@ -170,8 +181,7 @@ def cache_analysis(func: Callable) -> Callable:
         # Create a cache key based on inputs and key parameters
         key_parts = [
             "analyze",
-            content_hash(inputs[:10]),  # Use first 10 inputs for key
-            str(len(inputs)),
+            content_hash(inputs),  # Use content_hash which now handles ExampleSet objects
             str(kwargs.get('use_llm', False)),
             str(kwargs.get('analysis_type', 'all'))
         ]

@@ -11,6 +11,7 @@ import os
 import csv
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
+from .utils import parse_json
 
 from .logging import get_logger
 
@@ -54,7 +55,6 @@ class Input:
             content=data.get("content", ""),
             metadata=data.get("metadata", {}),
         )
-
 
 @dataclass
 class Response:
@@ -108,6 +108,7 @@ class Response:
             documents=data.get("documents"),
             metadata=data.get("metadata", {}),
         )
+
 @dataclass
 class Document:
     """
@@ -136,7 +137,6 @@ class Document:
     def __post_init__(self):
         if self.id is None:
             self.id = str(uuid.uuid4())
-
 
 @dataclass
 class TestItem:
@@ -228,7 +228,6 @@ class TestItem:
             document=document,
             metadata=data.get("metadata", {}),
         )
-
 
 @dataclass
 class TestSet:
@@ -382,7 +381,6 @@ class TestSet:
             logger.error(f"Failed to load test set from {file_path}: {str(e)}")
             return cls(inputs=[])
 
-
 @dataclass
 class ExampleItem:
     """
@@ -391,14 +389,12 @@ class ExampleItem:
     Attributes:
         input: The input text.
         reference_answer: Optional reference answer.
-        response: Optional model response.
         feedback: Optional feedback on the response.
         metadata: Additional metadata.
     """
     
     input: str
     reference_answer: Optional[Response | str] = None
-    response: Optional[Response | str] = None
     feedback: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     
@@ -406,12 +402,10 @@ class ExampleItem:
         """Convert to dictionary."""
         # Convert Response objects to their dictionary representations
         ref_answer_data = self.reference_answer.to_dict() if hasattr(self.reference_answer, 'to_dict') else self.reference_answer
-        response_data = self.response.to_dict() if hasattr(self.response, 'to_dict') else self.response
         
         return {
             "input": self.input,
             "reference_answer": ref_answer_data,
-            "response": response_data,
             "feedback": self.feedback,
             "metadata": self.metadata,
         }
@@ -421,10 +415,6 @@ class ExampleItem:
         # Convert string reference_answer to Response object
         if isinstance(self.reference_answer, str):
             self.reference_answer = Response(content=self.reference_answer)
-        
-        # Convert string response to Response object
-        if isinstance(self.response, str):
-            self.response = Response(content=self.response)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ExampleItem':
@@ -438,33 +428,24 @@ class ExampleItem:
             ref_answer_obj = Response.from_dict(ref_answer_data)
         else:
             ref_answer_obj = ref_answer_data  # Will be converted to Response in __post_init__ if it's a string
-        
-        # Get response data
-        response_data = data.get("response")
-        if isinstance(response_data, dict):
-            response_obj = Response.from_dict(response_data)
-        else:
-            response_obj = response_data  # Will be converted to Response in __post_init__ if it's a string
-        
+            
         return cls(
             input=data.get("input", ""),
             reference_answer=ref_answer_obj,
-            response=response_obj,
             feedback=data.get("feedback"),
             metadata=data.get("metadata", {}),
         )
 
-
 @dataclass
 class ExampleSet:
     """
-    A collection of example inputs.
+    A collection of example item.
     
     Attributes:
-        inputs: The example inputs. Can be:
+        examples: The example items. Can be:
             - A list of ExampleItem objects
             - A list of strings (inputs)
-            - A list of dictionaries (structured inputs)
+            - A list of dictionaries (inputs, reference_answers)
             - A dictionary with a "inputs" key
             - A file path (string) to a JSON file
             - A single ExampleItem object
@@ -474,25 +455,25 @@ class ExampleSet:
         client: The API client to use for embeddings (required if remove_similar is True).
     """
     
-    inputs: Union[List[ExampleItem], List[str], List[Dict[str, Any]], Dict[str, Any], str, ExampleItem]
+    examples: Union[List[ExampleItem], List[str], List[Dict[str, Any]], Dict[str, Any], str, ExampleItem]
     metadata: Dict[str, Any] = field(default_factory=dict)
     remove_similar: bool = False
     similarity_threshold: float = 0.85
     client: Optional[Any] = None
     
     def __post_init__(self):
-        """Process the inputs after initialization if needed."""
+        """Process the examples after initialization if needed."""
         # Process the input if it's not already a list of ExampleItem objects
-        if not (isinstance(self.inputs, list) and 
-                all(isinstance(q, ExampleItem) for q in self.inputs)):
-            self.inputs = self._process_input(self.inputs)
+        if not (isinstance(self.examples, list) and 
+                all(isinstance(q, ExampleItem) for q in self.examples)):
+            self.examples = self._process_input(self.examples)
         
-        # Remove similar inputs if requested and client is provided
-        if self.remove_similar and self.client and len(self.inputs) > 1:
-            self._remove_similar_inputs()
+        # Remove similar examples if requested and client is provided
+        if self.remove_similar and self.client and len(self.examples) > 1:
+            self._remove_similar_example_inputs()
     
     def _process_input(self, input_data) -> List[ExampleItem]:
-        """Convert various input formats to a list of ExampleItem objects."""
+        """Convert various example item formats to a list of ExampleItem objects."""
         # If it's a single ExampleItem, wrap it in a list
         if isinstance(input_data, ExampleItem):
             return [input_data]
@@ -543,7 +524,7 @@ class ExampleSet:
         # Simply pass the file path to the constructor, which will handle loading
         return cls(inputs=file_path)
     
-    def _remove_similar_inputs(self):
+    def _remove_similar_example_inputs(self):
         """Remove similar inputs from the set."""
         from ..testset_generation.generator import remove_similar_inputs
         
@@ -585,4 +566,107 @@ class ExampleSet:
             return True
         except Exception as e:
             logger.error(f"Failed to save example inputs: {e}")
+            return False
+
+    def length(self, selective: str = "") -> int:
+        if selective == "reference_answers":
+            length = 0
+            for reference_answer in self.examples:
+                length += len(reference_answer.split())
+        elif selective == "inputs":
+            return len(self.examples)
+        return len(self.examples)
+
+@dataclass
+class EvaluationResult:
+    """
+    A result of evaluating a single input.
+    
+    Attributes:
+        input: The input that was evaluated
+        reference: The reference answer if available
+        response: The response from the system
+        metrics: Dictionary of metric names to scores
+        pass_fail: Whether the result passes or fails
+        metadata: Additional metadata
+    """
+    
+    input: Any
+    response: Any
+    metrics: Dict[str, float] = field(default_factory=dict)
+    reference: Optional[Any] = None
+    pass_fail: Optional[bool] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        result = {
+            "metrics": self.metrics,
+            "metadata": self.metadata
+        }
+        
+        # Add optional fields if present
+        if self.input is not None:
+            if hasattr(self.input, "to_dict"):
+                result["input"] = self.input.to_dict()
+            else:
+                result["input"] = self.input
+                
+        if self.response is not None:
+            if hasattr(self.response, "to_dict"):
+                result["response"] = self.response.to_dict()
+            else:
+                result["response"] = self.response
+                
+        if self.reference is not None:
+            if hasattr(self.reference, "to_dict"):
+                result["reference"] = self.reference.to_dict()
+            else:
+                result["reference"] = self.reference
+                
+        if self.pass_fail is not None:
+            result["pass_fail"] = self.pass_fail
+            
+        return result
+
+@dataclass
+class EvaluationReport:
+    """
+    A report containing multiple evaluation results.
+    
+    Attributes:
+        results: List of evaluation results
+        summary: Summary of all results
+        metadata: Additional metadata
+    """
+    
+    results: List[EvaluationResult]
+    summary: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "results": [r.to_dict() for r in self.results],
+            "summary": self.summary,
+            "metadata": self.metadata
+        }
+    
+    def save(self, file_path: str) -> bool:
+        """
+        Save the evaluation report to a file.
+        
+        Args:
+            file_path: Path to save the report to
+            
+        Returns:
+            bool: Whether the save was successful
+        """
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
+            logger.info(f"Saved evaluation report to {file_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save evaluation report: {str(e)}")
             return False

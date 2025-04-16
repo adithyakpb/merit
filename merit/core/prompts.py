@@ -6,7 +6,6 @@ are exposed as variables that can be customized by the user.
 """
 
 import inspect
-import re
 import sys
 
 def get_all_prompts():
@@ -32,9 +31,7 @@ class Prompt(str):
         defaults: Optional dictionary of default values for variables in the prompt.
     """
     def __new__(cls, content, defaults=None):
-        # Create a new string instance
         instance = super().__new__(cls, content)
-        # Add defaults attribute
         instance.defaults = defaults or {}
         return instance
     
