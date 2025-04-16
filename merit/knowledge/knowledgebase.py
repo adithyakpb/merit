@@ -468,7 +468,228 @@ class KnowledgeBase:
             return list(self._rng.choice(self._documents, n, replace=True))
         else:
             return list(self._rng.choice(self._documents, n, replace=False))
+    def get_representative_documents(self, n: int, exclude_noise: bool = True) -> List[Document]:
+        """
+        Get a representative sample of documents based on topic distribution.
         
+        This method samples documents from each topic proportionally to the
+        number of documents in that topic, ensuring the sample represents
+        the knowledge base structure.
+        
+        Args:
+            n: The number of documents to sample.
+            exclude_noise: Whether to exclude documents from the noise topic (topic_id=-1).
+            
+        Returns:
+            List[Document]: The sampled documents.
+        """
+        # Use the new sample_documents_with_input_allocation method and extract just the documents
+        doc_input_pairs = self.sample_documents_with_input_allocation(
+            n=n,
+            strategy="representative"
+        )
+        return [doc for doc, _ in doc_input_pairs]
+    
+    def sample_documents_with_input_allocation(
+        self, 
+        n: int, 
+        strategy: str,
+        items_per_document: int = 1
+    ) -> List[Tuple[Document, int]]:
+        """
+        Sample documents from the knowledge base and determine input allocation.
+        
+        This method samples documents according to the specified strategy and
+        determines how many test inputs should be generated for each document.
+        
+        Args:
+            n: The total number of test inputs to generate.
+            strategy: The sampling strategy to use:
+                - "random": Randomly sample documents.
+                - "representative": Sample documents proportionally to topic distribution.
+                - "per_document": Sample documents and generate a fixed number of inputs per document.
+            items_per_document: Number of items to generate per document.
+                Only used when strategy is "per_document".
+                
+        Returns:
+            List[Tuple[Document, int]]: List of (document, inputs_to_generate) tuples.
+        """
+        if strategy == "random":
+            return self._sample_random_with_allocation(n)
+        elif strategy == "representative":
+            return self._sample_representative_with_allocation(n)
+        elif strategy == "per_document":
+            return self._sample_per_document_with_allocation(n, items_per_document)
+        else:
+            raise ValueError(f"Unknown sampling strategy: {strategy}")
+    
+    def _sample_random_with_allocation(self, n: int) -> List[Tuple[Document, int]]:
+        """
+        Randomly sample documents and determine input allocation.
+        
+        Args:
+            n: The total number of test inputs to generate.
+            
+        Returns:
+            List[Tuple[Document, int]]: List of (document, inputs_to_generate) tuples.
+        """
+        # Determine how many documents to sample
+        docs_to_sample = min(n, len(self._documents))
+        
+        # Sample documents
+        sampled_docs = self.get_random_documents(docs_to_sample)
+        
+        # Calculate inputs per document
+        base_inputs_per_doc = n // docs_to_sample
+        extra_inputs = n % docs_to_sample
+        
+        # Allocate inputs to documents
+        result = []
+        for i, doc in enumerate(sampled_docs):
+            inputs_for_doc = base_inputs_per_doc
+            if i < extra_inputs:
+                inputs_for_doc += 1
+            result.append((doc, inputs_for_doc))
+        
+        return result
+
+    def _sample_representative_with_allocation(self, n: int) -> List[Tuple[Document, int]]:
+        """
+        Sample documents proportionally to topic distribution and determine input allocation.
+        
+        Args:
+            n: The total number of test inputs to generate.
+            
+        Returns:
+            List[Tuple[Document, int]]: List of (document, inputs_to_generate) tuples.
+        """
+        # Get all topics
+        topics = self.topics
+        
+        # Filter out noise topic
+        valid_topics = {topic_id: name for topic_id, name in topics.items() if topic_id != -1}
+        
+        if not valid_topics:
+            logger.warning("No valid topics found, falling back to random sampling")
+            return self._sample_random_with_allocation(n)
+        
+        # Calculate the total number of documents in valid topics
+        topic_document_counts = {}
+        total_documents = 0
+        
+        for topic_id in valid_topics:
+            topic_docs = self.get_documents_by_topic(topic_id)
+            topic_document_counts[topic_id] = len(topic_docs)
+            total_documents += len(topic_docs)
+        
+        # Calculate how many inputs to generate for each topic
+        # based on the proportion of documents in that topic
+        topic_input_counts = {}
+        remaining_inputs = n
+        
+        # First, ensure each topic gets at least one input
+        for topic_id in valid_topics:
+            topic_input_counts[topic_id] = 1
+            remaining_inputs -= 1
+        
+        # If we've already allocated all inputs, we're done
+        if remaining_inputs <= 0:
+            remaining_inputs = 0
+        else:
+            # Distribute remaining inputs proportionally
+            for topic_id, doc_count in topic_document_counts.items():
+                proportion = doc_count / total_documents
+                additional_inputs = int(proportion * remaining_inputs)
+                topic_input_counts[topic_id] += additional_inputs
+                remaining_inputs -= additional_inputs
+        
+        # If we have any remaining inputs due to rounding,
+        # distribute them to the largest topics
+        if remaining_inputs > 0:
+            sorted_topics = sorted(
+                topic_document_counts.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+            
+            for topic_id, _ in sorted_topics:
+                if remaining_inputs <= 0:
+                    break
+                topic_input_counts[topic_id] += 1
+                remaining_inputs -= 1
+        
+        # Now determine how many documents to sample from each topic
+        # and how many inputs to generate per document
+        result = []
+        
+        for topic_id, input_count in topic_input_counts.items():
+            topic_docs = self.get_documents_by_topic(topic_id)
+            
+            # Determine how many documents to sample from this topic
+            # We want to maximize document diversity, so we'll use as many
+            # documents as possible (up to the number of inputs needed)
+            docs_to_sample = min(len(topic_docs), input_count)
+            
+            # Sample documents from this topic
+            sampled_indices = self._rng.choice(
+                len(topic_docs),
+                size=docs_to_sample,
+                replace=False
+            )
+            sampled_docs = [topic_docs[i] for i in sampled_indices]
+            
+            # Calculate inputs per document
+            base_inputs_per_doc = input_count // docs_to_sample
+            extra_inputs = input_count % docs_to_sample
+            
+            # Distribute inputs across documents
+            for i, doc in enumerate(sampled_docs):
+                # Give extra inputs to the first 'extra_inputs' documents
+                inputs_for_this_doc = base_inputs_per_doc
+                if i < extra_inputs:
+                    inputs_for_this_doc += 1
+                    
+                result.append((doc, inputs_for_this_doc))
+        
+        # Shuffle the result to avoid clustering by topic
+        self._rng.shuffle(result)
+        
+        return result
+
+    def _sample_per_document_with_allocation(self, n: int, items_per_document: int) -> List[Tuple[Document, int]]:
+        """
+        Sample documents and allocate a fixed number of inputs per document.
+        
+        Args:
+            n: The total number of test inputs to generate.
+            items_per_document: Number of items to generate per document.
+            
+        Returns:
+            List[Tuple[Document, int]]: List of (document, inputs_to_generate) tuples.
+        """
+        # Calculate how many documents to sample
+        docs_to_sample = (n + items_per_document - 1) // items_per_document
+        docs_to_sample = min(docs_to_sample, len(self._documents))
+        
+        # Sample documents
+        sampled_docs = self.get_random_documents(docs_to_sample)
+        
+        # Allocate inputs to documents
+        result = []
+        remaining_inputs = n
+        
+        for doc in sampled_docs:
+            # Allocate items to this document
+            items_for_doc = min(items_per_document, remaining_inputs)
+            if items_for_doc > 0:
+                result.append((doc, items_for_doc))
+                remaining_inputs -= items_for_doc
+            
+            # Stop if we've allocated all inputs
+            if remaining_inputs <= 0:
+                break
+        
+        return result
     def search(self, query: str, k: int = 5, mode: str = "embedding") -> List[Tuple[Document, float]]:
         """
         Search for documents similar to the query.
