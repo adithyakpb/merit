@@ -113,3 +113,193 @@ def is_valid_input(text: str) -> bool:
     
     return True
 
+
+def find_optimal_clusters(features: np.ndarray, max_clusters: int = 20, random_state: int = 42) -> int:
+    """
+    Find the optimal number of clusters using the elbow method.
+    
+    Args:
+        features: Feature matrix
+        max_clusters: Maximum number of clusters to consider
+        random_state: Random seed for reproducibility
+        
+    Returns:
+        int: Optimal number of clusters
+    """
+    import numpy as np
+    
+    # Limit max clusters based on data size
+    max_clusters = min(max_clusters, len(features) // 5)
+    max_clusters = max(2, min(10, max_clusters))  # At least 2, at most 10
+    
+    try:
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import silhouette_score
+        # Calculate inertias and silhouette scores for different cluster counts
+        inertias = []
+        silhouette_scores = []
+        
+        for n_clusters in range(2, max_clusters + 1):
+            kmeans = KMeans(n_clusters=n_clusters, random_state=random_state)
+            kmeans.fit(features)
+            inertias.append(kmeans.inertia_)
+            
+            # Calculate silhouette score
+            labels = kmeans.labels_
+            silhouette_scores.append(silhouette_score(features, labels))
+        # Try to use kneed package for elbow detection
+        try:
+            from kneed import KneeLocator
+            kneedle = KneeLocator( range(2, max_clusters + 1), inertias, S=1.0, curve="convex", direction="decreasing" )
+            elbow = kneedle.elbow
+            
+            # If no clear elbow, use max silhouette score
+            if elbow is None:
+                return np.argmax(silhouette_scores) + 2
+            return elbow
+        except ImportError:
+            # If kneed is not available, use silhouette score
+            return np.argmax(silhouette_scores) + 2
+    
+    except ImportError:
+        # If sklearn is not available, use a simple heuristic
+        return min(5, len(features) // 20 + 2)
+
+def compute_quality_metrics(
+    original_features: np.ndarray,
+    selected_indices: List[int],
+    clustering_results: Dict[str, Any],
+    semantic_embeddings: np.ndarray
+) -> Dict[str, Any]:
+    """
+    Compute quality metrics for the selected subset.
+    
+    Args:
+        original_features: Original feature matrix
+        selected_indices: Indices of selected examples
+        clustering_results: Results from clustering
+        semantic_embeddings: Semantic embeddings
+        
+    Returns:
+        Dict[str, Any]: Quality metrics
+    """
+    import numpy as np
+    
+    # Extract selected features
+    selected_features = original_features[selected_indices]
+    
+    # Basic metrics
+    metrics = {
+        "coverage_ratio": len(selected_indices) / len(original_features)
+    }
+    
+    # Try to compute convex hull coverage if scipy is available
+    try:
+        from scipy.spatial import ConvexHull
+        from sklearn.decomposition import PCA
+        
+        # Use PCA to reduce dimensionality for ConvexHull
+        n_components = min(selected_features.shape[0] - 1, selected_features.shape[1], 10)
+        if n_components >= 2:
+            pca = PCA(n_components=n_components)
+            original_reduced = pca.fit_transform(original_features)
+            subset_reduced = pca.transform(selected_features)
+            
+            try:
+                original_hull = ConvexHull(original_reduced)
+                subset_hull = ConvexHull(subset_reduced)
+                metrics["hull_coverage"] = subset_hull.volume / original_hull.volume
+            except Exception:
+                # Silently fail if ConvexHull fails
+                pass
+    except ImportError:
+        # Skip if scipy is not available
+        pass
+    
+    # Distribution similarity using Wasserstein distance if available
+    try:
+        from scipy.stats import wasserstein_distance
+        distances = []
+        for dim in range(original_features.shape[1]):
+            orig_values = original_features[:, dim]
+            subset_values = selected_features[:, dim]
+            # Add small epsilon to avoid division by zero
+            distances.append(1.0 / (1.0 + wasserstein_distance(orig_values, subset_values)))
+        
+        metrics["distribution_similarity"] = np.mean(distances)
+    except ImportError:
+        # Fallback to simpler metric
+        orig_mean = np.mean(original_features, axis=0)
+        subset_mean = np.mean(selected_features, axis=0)
+        metrics["distribution_similarity"] = 1.0 / (1.0 + np.linalg.norm(orig_mean - subset_mean))
+    
+    # Cluster representation
+    cluster_labels = clustering_results["labels"]
+    unique_clusters = clustering_results["unique_clusters"]
+    cluster_counts = clustering_results["counts"]
+    
+    subset_cluster_counts = {
+        i: np.sum(cluster_labels[selected_indices] == i) 
+        for i in unique_clusters
+    }
+    
+    proportional_representation = {}
+    for cluster_id in cluster_counts:
+        original_prop = cluster_counts[cluster_id] / len(original_features)
+        subset_prop = (
+            subset_cluster_counts[cluster_id] / len(selected_indices) 
+            if subset_cluster_counts[cluster_id] > 0 else 0
+        )
+        proportional_representation[cluster_id] = 1.0 - abs(original_prop - subset_prop)
+    
+    metrics["proportional_representation"] = proportional_representation
+    metrics["average_proportional_representation"] = np.mean(list(proportional_representation.values()))
+    
+    # Semantic diversity
+    selected_semantics = semantic_embeddings[selected_indices]
+    
+    # Calculate average pairwise distance as diversity measure
+    if len(selected_semantics) > 1:
+        total_distance = 0
+        count = 0
+        for i in range(len(selected_semantics)):
+            for j in range(i + 1, len(selected_semantics)):
+                total_distance += np.linalg.norm(selected_semantics[i] - selected_semantics[j])
+                count += 1
+        
+        metrics["semantic_diversity"] = total_distance / count if count > 0 else 0
+    else:
+        metrics["semantic_diversity"] = 0
+    
+    return metrics
+
+def print_diagnostics(
+    metrics: Dict[str, Any],
+    cluster_distribution: Dict[int, int],
+    sample_distribution: Dict[int, int],
+    silhouette_avg: float
+) -> None:
+    """
+    Print diagnostic information about the selection process.
+     Args:
+        metrics: Quality metrics
+        cluster_distribution: Distribution of examples across clusters
+        sample_distribution: Distribution of selected examples across clusters
+        silhouette_avg: Average silhouette score
+    """
+    print(f"Silhouette Score: {silhouette_avg:.4f}")
+
+    print("\nCluster Distribution:")
+    for cluster_id, count in sorted(cluster_distribution.items()):
+        original_percent = count / sum(cluster_distribution.values()) * 100
+        sample_count = sample_distribution.get(cluster_id, 0)
+        sample_total = sum(sample_distribution.values())
+        sample_percent = (sample_count / sample_total * 100) if sample_total > 0 else 0
+        print(f"  Cluster {cluster_id}: {count} examples ({original_percent:.1f}%) → {sample_count} samples ({sample_percent:.1f}%)")
+
+    print("\nQuality Metrics:")
+    print(f"  Coverage Ratio: {metrics.get('coverage_ratio', 'N/A'):.4f}")
+    print(f"  Hull Coverage: {metrics.get('hull_coverage', 'N/A')}")
+    print(f"  Distribution Similarity: {metrics.get('distribution_similarity', 'N/A'):.4f}")
+    print(f"  Average Proportional Representation: {metrics.get('average_proportional_representation', 'N/A'):.4f}")
+    print(f"  Semantic Diversity: {metrics.get('semantic_diversity', 'N/A'):.4f}")
