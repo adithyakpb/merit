@@ -10,7 +10,7 @@ from .evaluators.rag import RAGEvaluator, evaluate_rag, Response
 
 # Import metrics from the central metrics module for backward compatibility
 from ..metrics.base import BaseMetric
-from ..metrics.classification import ClassificationPerformanceMetric
+from ..metrics.llm_measured import LLMMeasuredBaseMetric
 from ..metrics.rag import (
     CorrectnessMetric, 
     FaithfulnessMetric, 
