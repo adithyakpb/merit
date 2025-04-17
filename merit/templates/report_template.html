@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MERIT Evaluation Report</title>
+    
+    <!-- Include D3.js for visualizations -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <!-- Include Chart.js for simpler charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Include Plotly.js for interactive plots -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    
+    <style>
+        /* Base styles */
+        :root {
+            /* Light theme (default) */
+            --primary-color: #4a6fa5;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --light-color: #f8f9fa;
+            --dark-color: #343a40;
+            --border-radius: 8px;
+            --box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            
+            /* Theme specific variables */
+            --bg-color: #f5f7fa;
+            --card-bg-color: #ffffff;
+            --text-color: #333333;
+            --border-color: #eeeeee;
+            --content-box-bg: #f8f9fa;
+            --hover-color: #e9ecef;
+        }
+        
+        /* Dark theme */
+        [data-theme="dark"] {
+            --primary-color: #5a8dd6;
+            --secondary-color: #adb5bd;
+            --success-color: #48c774;
+            --warning-color: #ffdd57;
+            --danger-color: #f14668;
+            
+            --bg-color: #121212;  /* Darker background */
+            --card-bg-color: #1e1e1e;  /* Darker card background */
+            --text-color: #e6e6e6;
+            --border-color: #333333;
+            --content-box-bg: #2d2d2d;  /* Darker content box */
+            --hover-color: #333333;
+            --box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: var(--bg-color);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        
+        /* Layout */
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        
+        @media (min-width: 768px) {
+            .dashboard-container {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        .card {
+            background: var(--card-bg-color);
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: background-color 0.3s ease;
+        }
+        
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: var(--primary-color);
+        }
+        
+        /* Metrics Summary */
+        .metrics-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        /* Theme toggle */
+        .report-controls {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background-color: var(--card-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            color: var(--text-color);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .theme-toggle:hover {
+            background-color: var(--hover-color);
+        }
+        
+        .dark-icon {
+            display: inline-block;
+        }
+        
+        .light-icon {
+            display: none;
+        }
+        
+        [data-theme="dark"] .dark-icon {
+            display: none;
+        }
+        
+        [data-theme="dark"] .light-icon {
+            display: inline-block;
+        }
+        
+        [data-theme="dark"] .toggle-text {
+            content: "Light Mode";
+        }
+        
+        .metric-box {
+            flex: 1;
+            min-width: 150px;
+            padding: 15px;
+            border-radius: var(--border-radius);
+            text-align: center;
+            background: var(--card-bg-color);
+            box-shadow: var(--box-shadow);
+            transition: background-color 0.3s ease;
+        }
+        
+        .metric-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--secondary-color);
+            margin-bottom: 5px;
+        }
+        
+        .metric-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        
+        /* Charts */
+        .chart-container {
+            height: 300px;
+            margin-bottom: 30px;
+        }
+        
+        /* Test Items */
+        .test-items-container {
+            margin-top: 30px;
+        }
+        
+        .test-item {
+            margin-bottom: 20px;
+            border-left: 4px solid var(--secondary-color);
+            padding-left: 15px;
+            background: var(--card-bg-color);
+            border-radius: 0 var(--border-radius) var(--border-radius) 0;
+            box-shadow: var(--box-shadow);
+            padding: 15px;
+            transition: all 0.3s ease;
+        }
+        
+        .test-item.expanded {
+            border-left-color: var(--primary-color);
+        }
+        
+        .test-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .test-item-title {
+            font-weight: 600;
+            margin: 0;
+        }
+        
+        .test-item-score {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .score-pill {
+            padding: 4px 8px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+        
+        .score-high {
+            background-color: var(--success-color);
+        }
+        
+        .score-medium {
+            background-color: var(--warning-color);
+            color: #212529;
+        }
+        
+        .score-low {
+            background-color: var(--danger-color);
+        }
+        
+        .test-item-content {
+            display: none;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        
+        .test-item.expanded .test-item-content {
+            display: block;
+        }
+        
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+        
+        @media (min-width: 768px) {
+            .content-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        .content-section {
+            margin-bottom: 15px;
+        }
+        
+        .content-section h4 {
+            margin-top: 0;
+            color: var(--primary-color);
+            font-size: 16px;
+        }
+        
+        .content-box {
+            background-color: var(--content-box-bg);
+            padding: 10px;
+            border-radius: var(--border-radius);
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+            transition: background-color 0.3s ease;
+        }
+        
+        /* Metrics Detail */
+        .metrics-detail {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .metric-detail-box {
+            flex: 1;
+            min-width: 120px;
+            padding: 10px;
+            border-radius: var(--border-radius);
+            background: var(--content-box-bg);
+            transition: background-color 0.3s ease;
+        }
+        
+        .metric-detail-name {
+            font-size: 12px;
+            color: var(--secondary-color);
+            margin-bottom: 5px;
+        }
+        
+        .metric-detail-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        /* Knowledge Base Visualization */
+        .kb-visualization {
+            height: 500px;
+            margin-top: 30px;
+        }
+        
+        /* Controls */
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        
+        .search-box {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+            width: 250px;
+        }
+        
+        .filter-dropdown {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+        }
+        
+        /* Tooltips */
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: var(--border-radius);
+            pointer-events: none;
+            z-index: 1000;
+            font-size: 12px;
+            max-width: 300px;
+        }
+        
+        /* Loading indicator */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100px;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: var(--primary-color);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>MERIT Evaluation Report</h1>
+        <div class="report-controls">
+            <button id="theme-toggle" class="theme-toggle">
+                <span class="light-icon">🌞</span>
+                <span class="dark-icon">🌙</span>
+                <span class="toggle-text">Dark Mode</span>
+            </button>
+            <span id="timestamp"></span>
+        </div>
+    </div>
+    
+    <div class="dashboard-container">
+        <!-- Summary Section -->
+        <div class="card full-width">
+            <h2>Summary</h2>
+            <div class="metrics-summary" id="metrics-summary">
+                <!-- Metrics summary will be populated here -->
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <canvas id="metrics-chart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Metrics Distribution -->
+        <div class="card">
+            <h2>Metrics Distribution</h2>
+            <div class="chart-container">
+                <canvas id="distribution-chart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Radar Chart -->
+        <div class="card">
+            <h2>Metrics Comparison</h2>
+            <div class="chart-container">
+                <canvas id="radar-chart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Knowledge Base Visualization -->
+        <div class="card full-width">
+            <h2>Knowledge Base Visualization</h2>
+            <div class="kb-visualization" id="kb-visualization">
+                <!-- Knowledge base visualization will be populated here -->
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Test Items -->
+        <div class="card full-width">
+            <h2>Test Items</h2>
+            <div class="controls">
+                <input type="text" class="search-box" id="search-box" placeholder="Search test items...">
+                <select class="filter-dropdown" id="metric-filter">
+                    <option value="all">All Metrics</option>
+                    <!-- Metric options will be populated here -->
+                </select>
+                <select class="filter-dropdown" id="score-filter">
+                    <option value="all">All Scores</option>
+                    <option value="high">High Scores (0.8-1.0)</option>
+                    <option value="medium">Medium Scores (0.4-0.8)</option>
+                    <option value="low">Low Scores (0.0-0.4)</option>
+                </select>
+            </div>
+            
+            <div class="test-items-container" id="test-items-container">
+                <!-- Test items will be populated here -->
+                <div class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Template for test item -->
+    <template id="test-item-template">
+        <div class="test-item" data-id="">
+            <div class="test-item-header">
+                <h3 class="test-item-title"></h3>
+                <div class="test-item-score"></div>
+            </div>
+            <div class="test-item-content">
+                <div class="content-grid">
+                    <div class="content-section">
+                        <h4>Input</h4>
+                        <div class="content-box input-content"></div>
+                    </div>
+                    <div class="content-section">
+                        <h4>Response</h4>
+                        <div class="content-box response-content"></div>
+                    </div>
+                    <div class="content-section">
+                        <h4>Reference Answer</h4>
+                        <div class="content-box reference-content"></div>
+                    </div>
+                    <div class="content-section">
+                        <h4>Document</h4>
+                        <div class="content-box document-content"></div>
+                    </div>
+                </div>
+                
+                <h4>Metrics</h4>
+                <div class="metrics-detail"></div>
+                
+                <div class="metric-details-container"></div>
+            </div>
+        </div>
+    </template>
+    
+    <!-- Data placeholder - will be replaced with actual data -->
+    <script>
+        // This will be replaced with the actual report data
+        const REPORT_DATA = {};
+    </script>
+    
+    <!-- Main script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if we have report data
+            if (!REPORT_DATA || Object.keys(REPORT_DATA).length === 0) {
+                document.body.innerHTML = '<div class="card full-width"><h2>Error</h2><p>No report data found. Please make sure the report data is properly embedded in this HTML file.</p></div>';
+                return;
+            }
+            
+            // Initialize the dashboard
+            initializeDashboard(REPORT_DATA);
+        });
+        
+        function initializeDashboard(data) {
+            // Set timestamp
+            if (data.metadata && data.metadata.timestamp) {
+                document.getElementById('timestamp').textContent = new Date(data.metadata.timestamp).toLocaleString();
+            }
+            
+            // Process the data
+            const processedData = processReportData(data);
+            
+            // Render the dashboard components
+            renderMetricsSummary(processedData);
+            renderMetricsChart(processedData);
+            renderDistributionChart(processedData);
+            renderRadarChart(processedData);
+            renderKnowledgeBaseVisualization(processedData);
+            renderTestItems(processedData);
+            
+            // Set up event listeners
+            setupEventListeners(processedData);
+        }
+        
+        function processReportData(data) {
+            // Extract metrics from the results
+            const metrics = {};
+            const metricValues = {};
+            
+            // Process results
+            data.results.forEach(result => {
+                result.metrics.forEach(metric => {
+                    const metricName = metric.metric_name || 'Unknown';
+                    
+                    if (!metrics[metricName]) {
+                        metrics[metricName] = [];
+                    }
+                    
+                    metrics[metricName].push({
+                        value: metric.value,
+                        explanation: metric.explanation || '',
+                        timestamp: metric.timestamp || '',
+                        raw_llm_response: metric.raw_llm_response || '',
+                        custom_measurements: metric.custom_measurements || {}
+                    });
+                    
+                    if (!metricValues[metricName]) {
+                        metricValues[metricName] = [];
+                    }
+                    
+                    metricValues[metricName].push(metric.value);
+                });
+            });
+            
+            // Calculate summary statistics for each metric
+            const metricStats = {};
+            Object.keys(metrics).forEach(metricName => {
+                const values = metricValues[metricName];
+                
+                metricStats[metricName] = {
+                    mean: values.reduce((a, b) => a + b, 0) / values.length,
+                    min: Math.min(...values),
+                    max: Math.max(...values),
+                    count: values.length,
+                    distribution: calculateDistribution(values)
+                };
+            });
+            
+            return {
+                original: data,
+                metrics: metrics,
+                metricStats: metricStats,
+                results: data.results
+            };
+        }
+        
+        function calculateDistribution(values) {
+            // Calculate distribution of values in ranges of 0.1
+            const distribution = Array(10).fill(0);
+            
+            values.forEach(value => {
+                const index = Math.min(Math.floor(value * 10), 9);
+                distribution[index]++;
+            });
+            
+            return distribution;
+        }
+        
+        function renderMetricsSummary(data) {
+            const container = document.getElementById('metrics-summary');
+            container.innerHTML = '';
+            
+            Object.keys(data.metricStats).forEach(metricName => {
+                const stats = data.metricStats[metricName];
+                
+                const metricBox = document.createElement('div');
+                metricBox.className = 'metric-box';
+                
+                const nameElement = document.createElement('div');
+                nameElement.className = 'metric-name';
+                nameElement.textContent = metricName;
+                
+                const valueElement = document.createElement('div');
+                valueElement.className = 'metric-value';
+                valueElement.textContent = stats.mean.toFixed(2);
+                
+                metricBox.appendChild(nameElement);
+                metricBox.appendChild(valueElement);
+                
+                container.appendChild(metricBox);
+            });
+        }
+        
+        // Function to update chart colors based on theme
+        function updateChartColors() {
+            // Force redraw charts with new theme colors
+            // This would be called after theme toggle
+            const charts = Chart.instances;
+            for (let chart of charts) {
+                chart.update();
+            }
+            
+            // Update Plotly charts if they exist
+            const kbPlot = document.getElementById('kb-plot');
+            if (kbPlot && kbPlot._fullLayout) {
+                const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--card-bg-color');
+                const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color');
+                
+                // Apply theme colors to the plot
+                Plotly.relayout(kbPlot, {
+                    paper_bgcolor: bgColor,
+                    plot_bgcolor: bgColor,
+                    font: {
+                        color: textColor
+                    },
+                    xaxis: {
+                        showticklabels: false,
+                        showgrid: false,
+                        zeroline: false,
+                        color: textColor
+                    },
+                    yaxis: {
+                        showticklabels: false,
+                        showgrid: false,
+                        zeroline: false,
+                        color: textColor
+                    }
+                });
+                
+                // Update marker colors if needed
+                const traces = kbPlot.data;
+                for (let i = 0; i < traces.length; i++) {
+                    if (traces[i].marker && traces[i].marker.line) {
+                        traces[i].marker.line.color = document.documentElement.getAttribute('data-theme') === 'dark' ? '#333' : 'white';
+                    }
+                }
+                
+                // Force redraw
+                Plotly.redraw(kbPlot);
+            }
+        }
+        
+        function renderMetricsChart(data) {
+            // Instead of rendering a bar chart, we'll just hide this section
+            // as per the requirement to remove the bar graph
+            const container = document.getElementById('metrics-chart').parentNode;
+            container.style.display = 'none';
+        }
+        
+        function renderDistributionChart(data) {
+            const ctx = document.getElementById('distribution-chart').getContext('2d');
+            
+            // Get the first metric for now
+            const metricName = Object.keys(data.metricStats)[0];
+            const distribution = data.metricStats[metricName].distribution;
+            
+            const labels = ['0.0-0.1', '0.1-0.2', '0.2-0.3', '0.3-0.4', '0.4-0.5', 
+                           '0.5-0.6', '0.6-0.7', '0.7-0.8', '0.8-0.9', '0.9-1.0'];
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `${metricName} Distribution`,
+                        data: distribution,
+                        backgroundColor: 'rgba(74, 111, 165, 0.7)',
+                        borderColor: 'rgba(74, 111, 165, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+        
+        function renderRadarChart(data) {
+            const ctx = document.getElementById('radar-chart').getContext('2d');
+            
+            const metricNames = Object.keys(data.metricStats);
+            const metricMeans = metricNames.map(name => data.metricStats[name].mean);
+            
+            new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: metricNames,
+                    datasets: [{
+                        label: 'Metrics',
+                        data: metricMeans,
+                        backgroundColor: 'rgba(74, 111, 165, 0.2)',
+                        borderColor: 'rgba(74, 111, 165, 1)',
+                        pointBackgroundColor: 'rgba(74, 111, 165, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(74, 111, 165, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 1
+                        }
+                    }
+                }
+            });
+        }
+        
+        function renderKnowledgeBaseVisualization(data) {
+            const container = document.getElementById('kb-visualization');
+            
+            // Check if we have document content
+            let hasDocuments = false;
+            
+            if (data.original.results && data.original.results.length > 0) {
+                const firstResult = data.original.results[0];
+                if (firstResult.metadata && firstResult.metadata.document_content) {
+                    hasDocuments = true;
+                }
+            }
+            
+            if (!hasDocuments) {
+                container.innerHTML = '<p>No document content available for visualization.</p>';
+                return;
+            }
+            
+            // Create visualization container
+            container.innerHTML = '<div id="kb-plot"></div><div id="topic-legend" class="topic-legend" style="margin-top: 20px;"></div>';
+            
+            // Extract documents and their topics
+            const documents = data.original.results.map(result => {
+                // Parse topic_id from metadata if available
+                let topicId = -1;
+                let topicName = "Unknown";
+                
+                if (result.metadata) {
+                    if (result.metadata.topic_id !== null && result.metadata.topic_id !== undefined) {
+                        topicId = result.metadata.topic_id;
+                    }
+                    
+                    if (result.metadata.topic_name) {
+                        topicName = result.metadata.topic_name;
+                    }
+                    
+                    // Try to extract topic from document content if available
+                    if (result.metadata.document_content) {
+                        const content = result.metadata.document_content;
+                        const topicMatch = content.match(/topic_id':\s*(\d+)/);
+                        if (topicMatch && topicMatch[1]) {
+                            topicId = parseInt(topicMatch[1]);
+                        }
+                    }
+                }
+                
+                return {
+                    id: result.input.id || Math.random().toString(36).substring(7),
+                    content: result.metadata.document_content || '',
+                    topic_id: topicId,
+                    topic_name: topicName,
+                    x: Math.random() * 100,
+                    y: Math.random() * 100
+                };
+            });
+            
+            // Get unique topics
+            const topics = Array.from(new Set(documents.map(d => d.topic_id)));
+            
+            // Generate colors for each topic
+            const colorScale = [
+                '#1f77b4', // blue
+                '#ff7f0e', // orange
+                '#2ca02c', // green
+                '#d62728', // red
+                '#9467bd', // purple
+                '#8c564b', // brown
+                '#e377c2', // pink
+                '#7f7f7f', // gray
+                '#bcbd22', // olive
+                '#17becf'  // teal
+            ];
+            
+            // Create a map of topic_id to color
+            const topicColors = {};
+            topics.forEach((topic, i) => {
+                topicColors[topic] = colorScale[i % colorScale.length];
+            });
+            
+            // Create a trace for each topic
+            const traces = topics.map(topic => {
+                const topicDocs = documents.filter(d => d.topic_id === topic);
+                return {
+                    name: `Topic ${topic}`,
+                    x: topicDocs.map(d => d.x),
+                    y: topicDocs.map(d => d.y),
+                    mode: 'markers',
+                    type: 'scatter',
+                    marker: {
+                        size: 12,
+                        color: topicColors[topic],
+                        line: {
+                            color: 'white',
+                            width: 1
+                        }
+                    },
+                    text: topicDocs.map(d => {
+                        const content = d.content.substring(0, 100) + (d.content.length > 100 ? '...' : '');
+                        return `Topic: ${d.topic_name} (ID: ${d.topic_id})<br>Content: ${content}`;
+                    }),
+                    hoverinfo: 'text'
+                };
+            });
+            
+            const layout = {
+                title: 'Knowledge Base Documents by Topic',
+                xaxis: {
+                    showticklabels: false,  // Hide x-axis labels
+                    showgrid: false,
+                    zeroline: false
+                },
+                yaxis: {
+                    showticklabels: false,  // Hide y-axis labels
+                    showgrid: false,
+                    zeroline: false
+                },
+                hovermode: 'closest',
+                legend: {
+                    title: {
+                        text: 'Topics'
+                    }
+                },
+                margin: {  // Adjust margins to give more space to the plot
+                    l: 20,
+                    r: 20,
+                    t: 50,
+                    b: 20
+                },
+                paper_bgcolor: getComputedStyle(document.documentElement).getPropertyValue('--card-bg-color'),
+                plot_bgcolor: getComputedStyle(document.documentElement).getPropertyValue('--card-bg-color'),
+                font: {
+                    color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+                },
+                xaxis: {
+                    showticklabels: false,
+                    showgrid: false,
+                    zeroline: false,
+                    color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+                },
+                yaxis: {
+                    showticklabels: false,
+                    showgrid: false,
+                    zeroline: false,
+                    color: getComputedStyle(document.documentElement).getPropertyValue('--text-color')
+                }
+            };
+            
+            Plotly.newPlot('kb-plot', traces, layout);
+            
+            // Create a separate card for topic information
+            const topicCard = document.createElement('div');
+            topicCard.className = 'card full-width';
+            topicCard.innerHTML = '<h2>Topic Information</h2><div id="topic-legend"></div>';
+            
+            // Insert the topic card after the knowledge base visualization card
+            const kbCard = document.getElementById('kb-visualization').closest('.card');
+            kbCard.parentNode.insertBefore(topicCard, kbCard.nextSibling);
+            
+            // Get the topic legend container
+            const legendContainer = document.getElementById('topic-legend');
+            
+            // Group documents by topic
+            const topicGroups = {};
+            documents.forEach(doc => {
+                if (!topicGroups[doc.topic_id]) {
+                    topicGroups[doc.topic_id] = {
+                        name: doc.topic_name,
+                        count: 0,
+                        docs: []
+                    };
+                }
+                topicGroups[doc.topic_id].count++;
+                topicGroups[doc.topic_id].docs.push(doc);
+            });
+            
+            // Create topic info cards
+            const topicCardsHTML = Object.keys(topicGroups).map(topicId => {
+                const topic = topicGroups[topicId];
+                return `
+                    <div class="topic-card" style="padding: 10px; margin-bottom: 10px; border-radius: var(--border-radius); background-color: var(--content-box-bg); border-left: 4px solid ${topicColors[topicId]};">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h4 style="margin: 0;">Topic ${topicId}: ${topic.name}</h4>
+                            <span>${topic.count} documents</span>
+                        </div>
+                        <div style="margin-top: 5px; font-size: 12px;">
+                            Sample document: ${topic.docs[0].content.substring(0, 100)}...
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Add all topic cards at once
+            legendContainer.innerHTML = '<h3>Topic Information</h3>' + topicCardsHTML;
+        }
+        
+        function renderTestItems(data) {
+            const container = document.getElementById('test-items-container');
+            container.innerHTML = '';
+            
+            const template = document.getElementById('test-item-template');
+            
+            // Populate metric filter
+            const metricFilter = document.getElementById('metric-filter');
+            metricFilter.innerHTML = '<option value="all">All Metrics</option>';
+            
+            Object.keys(data.metricStats).forEach(metricName => {
+                const option = document.createElement('option');
+                option.value = metricName;
+                option.textContent = metricName;
+                metricFilter.appendChild(option);
+            });
+            
+            // Render each test item
+            data.original.results.forEach((result, index) => {
+                const clone = template.content.cloneNode(true);
+                
+                const testItem = clone.querySelector('.test-item');
+                testItem.dataset.id = result.input.id || index;
+                
+                const title = clone.querySelector('.test-item-title');
+                title.textContent = result.input.content || `Test Item ${index + 1}`;
+                
+                const scoreContainer = clone.querySelector('.test-item-score');
+                
+                // Calculate average score
+                let totalScore = 0;
+                let scoreCount = 0;
+                
+                result.metrics.forEach(metric => {
+                    if (typeof metric.value === 'number') {
+                        totalScore += metric.value;
+                        scoreCount++;
+                    }
+                });
+                
+                const avgScore = scoreCount > 0 ? totalScore / scoreCount : 0;
+                
+                // Add score pill
+                const scorePill = document.createElement('div');
+                scorePill.className = 'score-pill';
+                
+                if (avgScore >= 0.8) {
+                    scorePill.classList.add('score-high');
+                } else if (avgScore >= 0.4) {
+                    scorePill.classList.add('score-medium');
+                } else {
+                    scorePill.classList.add('score-low');
+                }
+                
+                scorePill.textContent = avgScore.toFixed(2);
+                scoreContainer.appendChild(scorePill);
+                
+                // Populate content
+                const inputContent = clone.querySelector('.input-content');
+                inputContent.textContent = result.input.content || '';
+                
+                const responseContent = clone.querySelector('.response-content');
+                responseContent.textContent = result.response.content || '';
+                
+                const referenceContent = clone.querySelector('.reference-content');
+                referenceContent.textContent = result.reference ? (result.reference.content || '') : '';
+                
+                const documentContent = clone.querySelector('.document-content');
+                documentContent.textContent = result.metadata && result.metadata.document_content ? 
+                    result.metadata.document_content : '';
+                
+                // Populate metrics
+                const metricsDetail = clone.querySelector('.metrics-detail');
+                
+                result.metrics.forEach(metric => {
+                    const metricBox = document.createElement('div');
+                    metricBox.className = 'metric-detail-box';
+                    
+                    const nameElement = document.createElement('div');
+                    nameElement.className = 'metric-detail-name';
+                    nameElement.textContent = metric.metric_name || 'Unknown';
+                    
+                    const valueElement = document.createElement('div');
+                    valueElement.className = 'metric-detail-value';
+                    valueElement.textContent = typeof metric.value === 'number' ? 
+                        metric.value.toFixed(2) : metric.value;
+                    
+                    metricBox.appendChild(nameElement);
+                    metricBox.appendChild(valueElement);
+                    
+                    metricsDetail.appendChild(metricBox);
+                });
+                
+                // Populate metric details
+                const metricDetailsContainer = clone.querySelector('.metric-details-container');
+                
+                result.metrics.forEach(metric => {
+                    if (metric.explanation) {
+                        const detailSection = document.createElement('div');
+                        detailSection.className = 'content-section';
+                        
+                        const heading = document.createElement('h4');
+                        heading.textContent = `${metric.metric_name || 'Unknown'} Explanation`;
+                        
+                        const content = document.createElement('div');
+                        content.className = 'content-box';
+                        content.textContent = metric.explanation;
+                        
+                        detailSection.appendChild(heading);
+                        detailSection.appendChild(content);
+                        
+                        metricDetailsContainer.appendChild(detailSection);
+                    }
+                    
+                    // Add custom measurements if available
+                    if (metric.custom_measurements && Object.keys(metric.custom_measurements).length > 0) {
+                        const customSection = document.createElement('div');
+                        customSection.className = 'content-section';
+                        
+                        const heading = document.createElement('h4');
+                        heading.textContent = `${metric.metric_name || 'Unknown'} Details`;
+                        
+                        const content = document.createElement('div');
+                        content.className = 'content-box';
+                        content.textContent = JSON.stringify(metric.custom_measurements, null, 2);
+                        
+                        customSection.appendChild(heading);
+                        customSection.appendChild(content);
+                        
+                        metricDetailsContainer.appendChild(customSection);
+                    }
+                });
+                
+                container.appendChild(clone);
+            });
+        }
+        
+        function setupEventListeners(data) {
+            // Theme toggle
+            const themeToggle = document.getElementById('theme-toggle');
+            const toggleText = themeToggle.querySelector('.toggle-text');
+            
+            // Check for saved theme preference
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                toggleText.textContent = 'Light Mode';
+            }
+            
+            themeToggle.addEventListener('click', function() {
+                const currentTheme = document.documentElement.getAttribute('data-theme');
+                
+                if (currentTheme === 'dark') {
+                    document.documentElement.removeAttribute('data-theme');
+                    localStorage.setItem('theme', 'light');
+                    toggleText.textContent = 'Dark Mode';
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    localStorage.setItem('theme', 'dark');
+                    toggleText.textContent = 'Light Mode';
+                }
+                
+                // Update chart colors for the new theme
+                updateChartColors();
+            });
+                        
+            // Test item expansion
+            document.querySelectorAll('.test-item-header').forEach(header => {
+                header.addEventListener('click', function() {
+                    const testItem = this.closest('.test-item');
+                    testItem.classList.toggle('expanded');
+                });
+            });
+            
+            // Search functionality
+            const searchBox = document.getElementById('search-box');
+            searchBox.addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                
+                document.querySelectorAll('.test-item').forEach(item => {
+                    const title = item.querySelector('.test-item-title').textContent.toLowerCase();
+                    const input = item.querySelector('.input-content').textContent.toLowerCase();
+                    const response = item.querySelector('.response-content').textContent.toLowerCase();
+                    
+                    if (title.includes(searchTerm) || input.includes(searchTerm) || response.includes(searchTerm)) {
+                        item.style.display = '';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            });
+            
+            // Metric filter
+            const metricFilter = document.getElementById('metric-filter');
+            metricFilter.addEventListener('change', function() {
+                const selectedMetric = this.value;
+                
+                if (selectedMetric === 'all') {
+                    document.querySelectorAll('.test-item').forEach(item => {
+                        item.style.display = '';
+                    });
+                    return;
+                }
+                
+                document.querySelectorAll('.test-item').forEach(item => {
+                    const metricNames = Array.from(item.querySelectorAll('.metric-detail-name'))
+                        .map(el => el.textContent);
+                    
+                    if (metricNames.includes(selectedMetric)) {
+                        item.style.display = '';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            });
+            
+            // Score filter
+            const scoreFilter = document.getElementById('score-filter');
+            scoreFilter.addEventListener('change', function() {
+                const selectedFilter = this.value;
+                
+                if (selectedFilter === 'all') {
+                    document.querySelectorAll('.test-item').forEach(item => {
+                        item.style.display = '';
+                    });
+                    return;
+                }
+                
+                document.querySelectorAll('.test-item').forEach(item => {
+                    const scorePill = item.querySelector('.score-pill');
+                    const score = parseFloat(scorePill.textContent);
+                    
+                    let show = false;
+                    
+                    if (selectedFilter === 'high') {
+                        show = score >= 0.8;
+                    } else if (selectedFilter === 'medium') {
+                        show = score >= 0.4 && score < 0.8;
+                    } else if (selectedFilter === 'low') {
+                        show = score < 0.4;
+                    }
+                    
+                    item.style.display = show ? '' : 'none';
+                });
+            });
+        }
+    </script>
+</body>
+</html>
