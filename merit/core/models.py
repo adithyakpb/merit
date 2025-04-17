@@ -593,7 +593,7 @@ class EvaluationResult:
     
     input: Any
     response: Any
-    metrics: Dict[str, float] = field(default_factory=dict)
+    metrics: List[Dict[str, Any]] = field(default_factory=list)
     reference: Optional[Any] = None
     pass_fail: Optional[bool] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -652,21 +652,69 @@ class EvaluationReport:
             "metadata": self.metadata
         }
     
-    def save(self, file_path: str) -> bool:
+    def save(self, file_path: str, generate_html: bool = True) -> bool:
         """
         Save the evaluation report to a file.
         
         Args:
             file_path: Path to save the report to
+            generate_html: Whether to also generate an HTML report
             
         Returns:
             bool: Whether the save was successful
         """
         try:
+            # Save JSON report
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
             logger.info(f"Saved evaluation report to {file_path}")
+            
+            # Generate HTML if requested
+            if generate_html:
+                html_path = file_path.replace('.json', '.html')
+                html_success = self.save_as_html(html_path)
+                if html_success:
+                    logger.info(f"Generated HTML report at {html_path}")
+                else:
+                    logger.warning(f"Failed to generate HTML report at {html_path}")
+            
             return True
         except Exception as e:
             logger.error(f"Failed to save evaluation report: {str(e)}")
+            return False
+    
+    def save_as_html(self, file_path: str) -> bool:
+        """
+        Save the evaluation report as an HTML file.
+        
+        Args:
+            file_path: Path to save the HTML report to
+            
+        Returns:
+            bool: Whether the save was successful
+        """
+        try:
+            import os
+            
+            # Get the HTML template
+            template_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'templates')
+            template_path = os.path.join(template_dir, 'report_template.html')
+            
+            with open(template_path, 'r', encoding='utf-8') as f:
+                template = f.read()
+            
+            # Convert report to JSON string
+            report_json = json.dumps(self.to_dict(), indent=2)
+            
+            # Insert the report data into the template
+            html_content = template.replace('const REPORT_DATA = {};', 
+                                          f'const REPORT_DATA = {report_json};')
+            
+            # Write the HTML file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save HTML report: {str(e)}")
             return False
