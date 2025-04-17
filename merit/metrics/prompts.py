@@ -50,12 +50,14 @@ Here is the model's answer to evaluate:
 
 Provide your evaluation as a JSON object with the following structure:
 {
-  "correctness_score": 0.0-1.0,
+  "correctness": 0.0-1.0,
   "explanation": "Detailed explanation of the evaluation",
   "errors": ["List of factual errors or omissions, if any"]
 }
 
-The correctness_score should be a float between 0.0 (completely incorrect) and 1.0 (completely correct).
+Make sure to include commas between the fields in the JSON object.
+
+The correctness should be a float between 0.0 (completely incorrect) and 1.0 (completely correct).
 """, 
   defaults={}
 )
@@ -86,11 +88,13 @@ Here is the model's answer to evaluate:
 
 Provide your evaluation as a JSON object with the following structure:
 {
-  "relevance_score": 0.0-1.0,
+  "relevance": 0.0-1.0,
   "explanation": "Detailed explanation of the evaluation"
 }
 
-The relevance_score should be a float between 0.0 (completely irrelevant) and 1.0 (completely relevant).
+Make sure to include commas between the fields in the JSON object.
+
+The relevance should be a float between 0.0 (completely irrelevant) and 1.0 (completely relevant).
 """)
 
 # Faithfulness Evaluation Prompt
@@ -119,12 +123,14 @@ Here is the model's answer to evaluate:
 
 Provide your evaluation as a JSON object with the following structure:
 {
-  "faithfulness_score": 0.0-1.0,
+  "faithfulness": 0.0-1.0,
   "explanation": "Detailed explanation of the evaluation",
   "hallucinations": ["List of hallucinated statements, if any"]
 }
 
-The faithfulness_score should be a float between 0.0 (completely unfaithful) and 1.0 (completely faithful).
+Make sure to include commas between the fields in the JSON object.
+
+The faithfulness should be a float between 0.0 (completely unfaithful) and 1.0 (completely faithful).
 """)
 
 # Coherence Evaluation Prompt
@@ -146,11 +152,13 @@ Here is the model's answer to evaluate:
 
 Provide your evaluation as a JSON object with the following structure:
 {
-  "coherence_score": 0.0-1.0,
+  "coherence": 0.0-1.0,
   "explanation": "Detailed explanation of the evaluation"
 }
 
-The coherence_score should be a float between 0.0 (completely incoherent) and 1.0 (completely coherent).
+Make sure to include commas between the fields in the JSON object.
+
+The coherence should be a float between 0.0 (completely incoherent) and 1.0 (completely coherent).
 """)
 
 # Fluency Evaluation Prompt
@@ -172,10 +180,96 @@ Here is the model's answer to evaluate:
 
 Provide your evaluation as a JSON object with the following structure:
 {
-  "fluency_score": 0.0-1.0,
+  "fluency": 0.0-1.0,
   "explanation": "Detailed explanation of the evaluation",
   "errors": ["List of grammatical or spelling errors, if any"]
 }
 
-The fluency_score should be a float between 0.0 (completely not fluent) and 1.0 (completely fluent).
+Make sure to include commas between the fields in the JSON object.
+
+The fluency should be a float between 0.0 (completely not fluent) and 1.0 (completely fluent).
+""")
+
+# Context Precision with Reference Prompt
+CONTEXT_PRECISION_WITH_REFERENCE_PROMPT = Prompt("""You are an AI assistant helping to evaluate the precision of retrieved contexts in a RAG (Retrieval-Augmented Generation) system.
+
+I will provide you with:
+1. A user input
+2. A reference answer
+3. A retrieved context
+
+Your task is to evaluate whether the retrieved context is relevant to answering the user input, based on the reference answer. The evaluation should consider:
+1. Relevance: Does the retrieved context contain information needed to answer the user input?
+2. Precision: Does the retrieved context contain mostly relevant information without excessive irrelevant content?
+
+Here is the user input:
+
+<user_input>
+{user_input}
+</user_input>
+
+Here is the reference answer:
+
+<reference_answer>
+{reference_answer}
+</reference_answer>
+
+Here is the retrieved context to evaluate:
+
+<retrieved_context>
+{retrieved_context}
+</retrieved_context>
+
+Provide your evaluation as a JSON object with the following structure:
+{
+  "is_relevant": true/false,
+  "relevance_score": 0.0-1.0,
+  "explanation": "Detailed explanation of why the context is or is not relevant"
+}
+
+Make sure to include commas between the fields in the JSON object.
+
+The relevance_score should be a float between 0.0 (completely irrelevant) and 1.0 (completely relevant).
+""")
+
+# Context Precision without Reference Prompt
+CONTEXT_PRECISION_WITHOUT_REFERENCE_PROMPT = Prompt("""You are an AI assistant helping to evaluate the precision of retrieved contexts in a RAG (Retrieval-Augmented Generation) system.
+
+I will provide you with:
+1. A user input
+2. A system response
+3. A retrieved context
+
+Your task is to evaluate whether the retrieved context is relevant to answering the user input, based on the system response. The evaluation should consider:
+1. Relevance: Does the retrieved context contain information needed to generate the response?
+2. Precision: Does the retrieved context contain mostly relevant information without excessive irrelevant content?
+
+Here is the user input:
+
+<user_input>
+{user_input}
+</user_input>
+
+Here is the system response:
+
+<system_response>
+{system_response}
+</system_response>
+
+Here is the retrieved context to evaluate:
+
+<retrieved_context>
+{retrieved_context}
+</retrieved_context>
+
+Provide your evaluation as a JSON object with the following structure:
+{
+  "is_relevant": true/false,
+  "relevance_score": 0.0-1.0,
+  "explanation": "Detailed explanation of why the context is or is not relevant"
+}
+
+Make sure to include commas between the fields in the JSON object.
+
+The relevance_score should be a float between 0.0 (completely irrelevant) and 1.0 (completely relevant).
 """)
