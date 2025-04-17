@@ -7,9 +7,10 @@ This module provides evaluator classes for RAG (Retrieval-Augmented Generation) 
 import json
 from typing import Dict, Any, List, Optional, Union, Callable, Sequence
 from inspect import signature
+from ...metrics.base import BaseMetric
 from ...metrics.rag import CorrectnessMetric, FaithfulnessMetric, RelevanceMetric, CoherenceMetric, FluencyMetric
 from .base import BaseEvaluator, EvaluationReport, EvaluationResult
-from ...core.models import TestSet, TestItem
+from ...core.models import TestSet, TestItem, Response
 from ...knowledge import KnowledgeBase
 from ...core.logging import get_logger
 
@@ -17,30 +18,6 @@ logger = get_logger(__name__)
 
 # Constants
 ANSWER_FN_HISTORY_PARAM = "history"
-
-class Response:
-    """
-    A class representing a response from the evaluated system.
-    
-    Attributes:
-        content: The answer text
-        documents: The documents used to generate the answer
-        metadata: Additional metadata
-    """
-    
-    def __init__(self, content, documents=None, metadata=None):
-        """
-        Initialize the agent answer.
-        
-        Args:
-            content: The answer text
-            documents: The documents used to generate the answer
-            metadata: Additional metadata
-        """
-        self.content = content
-        self.documents = documents
-        self.metadata = metadata or {}
-
 class RAGEvaluator(BaseEvaluator):
     """
     Evaluator for RAG systems.
@@ -50,31 +27,34 @@ class RAGEvaluator(BaseEvaluator):
     
     def __init__(
         self,
+        test_set: TestSet,
+        metrics: Sequence[BaseMetric],
         knowledge_base: KnowledgeBase,
-        testset: TestSet,
         llm_client=None,
         agent_description: str = "This agent is a chatbot that answers input from users.",
-        metrics: Optional[Sequence[Union[str, Callable]]] = None
+        context: Optional[Dict[str, Any]] = None
     ):
         """
         Initialize the RAG evaluator.
         
         Args:
+            test_set: The test set to evaluate on
+            metrics: List of metrics to evaluate
             knowledge_base: The knowledge base
-            testset: The test set
             llm_client: The LLM client
             agent_description: Description of the agent
-            metrics: List of metrics to evaluate
+            context: Additional context for evaluation
         """
-        super().__init__(metrics)
+        # Initialize metrics if they are provided as strings
+        initialized_metrics = self._initialize_metrics(metrics) if any(isinstance(m, str) for m in metrics) else metrics
+        
+        # Call the parent constructor with the required parameters
+        super().__init__(test_set, initialized_metrics)
+        
         self.knowledge_base = knowledge_base
-        self.testset = testset
         self.llm_client = llm_client
         self.agent_description = agent_description
-        
-        # Initialize metrics if provided
-        if metrics:
-            self._initialize_metrics(metrics)
+        self.context = context or {}
     
     def _initialize_metrics(self, metrics):
         """
@@ -116,27 +96,33 @@ class RAGEvaluator(BaseEvaluator):
         
         self.metrics = initialized_metrics
     
-    def evaluate(self, answer_fn):
+    def _evaluate_with_callable(self, system: Callable, test_set: TestSet, metrics: Sequence[BaseMetric]) -> EvaluationReport:
         """
-        Evaluate the RAG system.
+        Evaluate using a callable system that generates responses.
         
         Args:
-            answer_fn: A function that takes a input and optional history and returns an answer
+            system: The callable system
+            test_set: The test set
+            metrics: The metrics to use
             
         Returns:
             EvaluationReport: The evaluation report
         """
-        # Get inputs from testset
+        # Get inputs from test set
         inputs = self._get_inputs_from_testset()
         
         if not inputs:
-            logger.warning("No inputs found in testset")
-            return EvaluationReport(results=[], metrics=[m.name for m in self.metrics])
+            logger.warning("No inputs found in test set")
+            return EvaluationReport(
+                results=[],
+                summary={},
+                metadata={"metrics": [m.name for m in metrics]}
+            )
         
-        # Check if answer_fn accepts history parameter
+        # Check if system accepts history parameter
         needs_history = (
-            len(signature(answer_fn).parameters) > 1 and 
-            ANSWER_FN_HISTORY_PARAM in signature(answer_fn).parameters
+            len(signature(system).parameters) > 1 and 
+            ANSWER_FN_HISTORY_PARAM in signature(system).parameters
         )
         
         # Initialize results
@@ -145,19 +131,19 @@ class RAGEvaluator(BaseEvaluator):
         # Evaluate each input
         for sample in inputs:
             try:
-                # Prepare kwargs for answer_fn
+                # Prepare kwargs for system
                 kwargs = {}
                 if needs_history and hasattr(sample, 'conversation_history'):
                     kwargs[ANSWER_FN_HISTORY_PARAM] = sample.conversation_history
                 
-                # Generate answer
-                answer = answer_fn(sample.input, **kwargs)
+                # Generate answer and context
+                system_output = system(sample.input, **kwargs)
                 
-                # Cast answer to Response if needed
-                answer = self._cast_to_agent_answer(answer)
+                # Extract response and context
+                response = self._extract_response_and_context(system_output)
                 
                 # Evaluate with metrics
-                result = self._evaluate_sample(sample, answer)
+                result = self._evaluate_sample(sample, response)
                 results.append(result)
             except Exception as e:
                 logger.error(f"Error evaluating input {sample.id}: {str(e)}")
@@ -165,56 +151,97 @@ class RAGEvaluator(BaseEvaluator):
         # Create report
         return EvaluationReport(
             results=results,
-            metrics=[m.name for m in self.metrics],
+            summary={},
             metadata={
                 "num_inputs": len(inputs),
                 "num_evaluated": len(results),
                 "agent_description": self.agent_description,
                 "knowledge_base_id": getattr(self.knowledge_base, 'id', None),
                 "knowledge_base_name": getattr(self.knowledge_base, 'name', None),
-                "testset_id": getattr(self.testset, 'id', None),
-                "testset_name": getattr(self.testset, 'name', None),
+                "testset_id": getattr(test_set, 'id', None),
+                "testset_name": getattr(test_set, 'name', None),
+                "metrics": [m.name for m in metrics]
             }
         )
     
-    def _evaluate_sample(self, sample, answer):
+    def _extract_response_and_context(self, system_output):
+        """
+        Extract response and context from the system output.
+        
+        The system output can be:
+        1. A Response object
+        2. A string (which will be converted to a Response object)
+        3. A tuple of (response, context) where response is a Response object or string
+        4. A dict with 'response' and 'context' keys
+        
+        Args:
+            system_output: The output from the system
+            
+        Returns:
+            Response: A Response object with context in documents field
+        """
+        response = None
+        context = {}
+        
+        # Case 1 & 2: Response object or string
+        if isinstance(system_output, (str, Response)):
+            response = self._cast_to_agent_answer(system_output)
+        
+        # Case 3: Tuple of (response, context)
+        elif isinstance(system_output, tuple) and len(system_output) == 2:
+            response_content, context = system_output
+            response = self._cast_to_agent_answer(response_content)
+        
+        # Case 4: Dict with 'response' and 'context' keys
+        elif isinstance(system_output, dict) and 'response' in system_output:
+            response_content = system_output['response']
+            context = system_output.get('context', {})
+            response = self._cast_to_agent_answer(response_content)
+        
+        # Default case: Try to cast to Response
+        else:
+            try:
+                response = self._cast_to_agent_answer(system_output)
+            except ValueError:
+                raise ValueError(f"Cannot extract response from system output of type {type(system_output)}")
+        
+        # Store context in response.documents
+        if context and response:
+            response.documents = context if isinstance(context, list) else [context]
+        
+        return response
+    
+    def _evaluate_sample(self, test_item, response):
         """
         Evaluate a single sample with all metrics.
         
         Args:
-            sample: The input sample
-            answer: The model's answer
+            test_item: The test item to evaluate
+            response: The model's response (with context in documents field)
             
         Returns:
             EvaluationResult: The evaluation result
         """
         # Create evaluation result
         result = EvaluationResult(
-            input_id=sample.id,
-            input=sample.input,
-            reference_answer=sample.reference_answer,
-            model_answer=answer.content,
-            document_id=sample.document.id,
-            document_content=sample.document.content,
-            metadata=sample.metadata
+            input=test_item.input,
+            response=response,
+            reference=test_item.reference_answer,
+            metadata={
+                "document_id": test_item.document.id,
+                "document_content": test_item.document.content,
+                **test_item.metadata
+            }
         )
         
-        # Apply each metric
+        # Apply each metric and store the complete results
         for metric in self.metrics:
             try:
-                metric_result = metric(sample, answer)
-                for name, value in metric_result.items():
-                    if name == metric.name:
-                        result.scores[name] = value
-                    elif name.endswith("_explanation"):
-                        result.explanations[name.replace("_explanation", "")] = value
-                    elif name.endswith("_reason"):
-                        # Add this condition to also handle _reason fields
-                        result.explanations[name.replace("_reason", "")] = value
-                    elif name.endswith("_errors"):
-                        result.errors[name.replace("_errors", "")] = value
-                    elif name.endswith("_hallucinations"):
-                        result.hallucinations = value
+                # Pass response to the metric (context is in response.documents)
+                metric_result = metric(test_item, response)
+                
+                # Store the complete metric result
+                result.metrics.append(metric_result)
             except Exception as e:
                 logger.error(f"Error applying metric {metric.name}: {str(e)}")
         
@@ -228,8 +255,8 @@ class RAGEvaluator(BaseEvaluator):
             List[TestItem]: The inputs
         """
         for attr in ['inputs', 'samples', 'inputs']:
-            if hasattr(self.testset, attr):
-                return getattr(self.testset, attr)
+            if hasattr(self.test_set, attr):
+                return getattr(self.test_set, attr)
         return []
     
     def _cast_to_agent_answer(self, answer):
@@ -309,11 +336,11 @@ def evaluate_rag(
     
     # Create evaluator
     evaluator = RAGEvaluator(
+        test_set=testset,
+        metrics=metrics,
         knowledge_base=knowledge_base,
-        testset=testset,
         llm_client=llm_client,
-        agent_description=agent_description,
-        metrics=metrics
+        agent_description=agent_description
     )
     
     # Evaluate
