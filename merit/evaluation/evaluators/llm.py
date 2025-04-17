@@ -35,7 +35,7 @@ class LLMEvaluator(BaseEvaluator):
             llm_output_format: Output format for LLM generation
             metrics: List of metrics to evaluate
         """
-        super().__init__(metrics)
+        super().__init__(None, metrics)
         self.prompt = prompt
         self.llm_client = llm_client
         self.prefix_messages = prefix_messages or []
@@ -119,26 +119,13 @@ class LLMEvaluator(BaseEvaluator):
         
         # Create evaluation result
         result = EvaluationResult(
-            input_id=sample.get("meta", {}).get("__sample_id", ""),
             input=sample["conversation"][0]["content"],
-            reference_answer="",  # No reference answer in this case
-            model_answer=sample["conversation"][1]["content"],
-            document_id="",  # No document in this case
-            document_content="",  # No document in this case
+            response=sample["conversation"][1]["content"],
             metadata=sample.get("meta", {})
         )
         
-        # Add scores
-        for metric_name, metric_value in eval_result.items():
-            if isinstance(metric_value, (int, float)):
-                result.scores[metric_name] = metric_value
-            elif isinstance(metric_value, str):
-                result.explanations[metric_name] = metric_value
-            elif isinstance(metric_value, list):
-                if metric_name.endswith("_errors"):
-                    result.errors[metric_name] = metric_value
-                elif metric_name.endswith("_hallucinations"):
-                    result.hallucinations = metric_value
+        # Add the complete evaluation result to metrics
+        result.metrics.append(eval_result)
         
         return result
     # NOTE what is this
@@ -218,7 +205,8 @@ class LLMEvaluator(BaseEvaluator):
         # Get metric names
         metric_names = set()
         for result in results:
-            metric_names.update(result.scores.keys())
+            for metric_result in result.metrics:
+                metric_names.update(metric_result.keys())
         
         # Create report
         report = EvaluationReport(
