@@ -35,26 +35,16 @@ from .monitoring import (
 )
 
 # Classification metrics
-from .classification import (
-    ClassificationPerformanceMetric,
+from .llm_measured import (
     LLMMeasuredBaseMetric
-)
-
-# Evaluation metrics
-from .evaluation import (
-    EvaluationMetric,
-    AccuracyMetric,
-    ExactMatchMetric,
-    EvaluationMetricAdapter,
-    adapt_evaluation_metric
 )
 
 # RAG metrics
 from .rag import (
-    RAGMetric,
     CorrectnessMetric,
     FaithfulnessMetric,
     RelevanceMetric,
     CoherenceMetric,
-    FluencyMetric
+    FluencyMetric,
+    ContextPrecisionMetric
 )
