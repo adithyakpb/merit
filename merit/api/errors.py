@@ -5,10 +5,10 @@ This module defines specific API-related error classes for the MERIT system.
 """
 
 from typing import Dict, Any, Optional
-from merit.core.errors import MeritAPIError
+from merit.core.errors import MeritAPIError as MeritAPIBaseError
 
 
-class APIAuthenticationError(MeritAPIError):
+class MeritAPIAuthenticationError(MeritAPIBaseError):
     """Raised when API authentication fails."""
     def __init__(
         self, 
@@ -27,7 +27,7 @@ class APIAuthenticationError(MeritAPIError):
         super().__init__(message or default_message, code, request_id, details, help_text)
 
 
-class APIRateLimitError(MeritAPIError):
+class MeritAPIRateLimitError(MeritAPIBaseError):
     """Raised when API rate limit is exceeded."""
     def __init__(
         self, 
@@ -58,7 +58,7 @@ class APIRateLimitError(MeritAPIError):
         super().__init__(message or default_message, code, request_id, details, help_text)
 
 
-class APIConnectionError(MeritAPIError):
+class MeritAPIConnectionError(MeritAPIBaseError):
     """Raised when connection to the API fails."""
     def __init__(
         self, 
@@ -77,7 +77,7 @@ class APIConnectionError(MeritAPIError):
         super().__init__(message or default_message, code, request_id, details, help_text)
 
 
-class APIResourceNotFoundError(MeritAPIError):
+class MeritAPIResourceNotFoundError(MeritAPIBaseError):
     """Raised when a requested API resource is not found."""
     def __init__(
         self, 
@@ -96,7 +96,7 @@ class APIResourceNotFoundError(MeritAPIError):
         super().__init__(message or default_message, code, request_id, details, help_text)
 
 
-class APIServerError(MeritAPIError):
+class MeritAPIServerError(MeritAPIBaseError):
     """Raised when the API server returns a 5xx error."""
     def __init__(
         self, 
@@ -114,7 +114,7 @@ class APIServerError(MeritAPIError):
         super().__init__(message or default_message, code, request_id, details, help_text)
 
 
-class APITimeoutError(MeritAPIError):
+class MeritAPITimeoutError(MeritAPIBaseError):
     """Raised when an API request times out."""
     def __init__(
         self, 
@@ -133,7 +133,7 @@ class APITimeoutError(MeritAPIError):
         super().__init__(message or default_message, code, request_id, details, help_text)
 
 
-class APIInvalidRequestError(MeritAPIError):
+class MeritAPIInvalidRequestError(MeritAPIBaseError):
     """Raised when an API request is invalid."""
     def __init__(
         self, 

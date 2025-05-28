@@ -12,6 +12,7 @@ from functools import wraps
 from dotenv import load_dotenv
 
 from merit.core.logging import get_logger
+from .errors import MeritAPIAuthenticationError, MeritAPIInvalidRequestError
 
 logger = get_logger(__name__)
 
@@ -94,6 +95,13 @@ class BaseAPIClientConfig(ABC):
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        enable_retries: bool = True,
+        enable_throttling: bool = True,
+        max_retries: int = 3,
+        backoff_factor: float = 0.5,
+        initial_delay: float = 0.5,
+        min_delay: float = 0.05,
+        max_delay: float = 2.0,
         **kwargs
     ):
         """
@@ -102,10 +110,24 @@ class BaseAPIClientConfig(ABC):
         Args:
             api_key: API key for authentication.
             base_url: Base URL for the API.
+            enable_retries: Enable automatic retry functionality (default: True).
+            enable_throttling: Enable adaptive throttling functionality (default: True).
+            max_retries: Maximum number of retry attempts (default: 3).
+            backoff_factor: Exponential backoff factor for retries (default: 0.5).
+            initial_delay: Initial delay for adaptive throttling in seconds (default: 0.5).
+            min_delay: Minimum delay for adaptive throttling in seconds (default: 0.05).
+            max_delay: Maximum delay for adaptive throttling in seconds (default: 2.0).
             **kwargs: Additional configuration parameters.
         """
         self.api_key = api_key
         self.base_url = base_url
+        self.enable_retries = enable_retries
+        self.enable_throttling = enable_throttling
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.initial_delay = initial_delay
+        self.min_delay = min_delay
+        self.max_delay = max_delay
         self._additional_params = kwargs
     
     @classmethod
@@ -171,7 +193,10 @@ class BaseAPIClientConfig(ABC):
         # Check for required environment variables
         missing_vars = [var for var in required_vars if os.getenv(var) is None]
         if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+            raise MeritAPIAuthenticationError(
+                f"Missing required environment variables: {', '.join(missing_vars)}",
+                details={"missing_variables": missing_vars}
+            )
         
         # Create instance with available environment variables
         config_params = {}
@@ -209,7 +234,10 @@ class BaseAPIClientConfig(ABC):
                     missing_params.append(param_lower)
         
         if missing_params:
-            raise ValueError(f"Missing required configuration parameters: {', '.join(missing_params)}")
+            raise MeritAPIInvalidRequestError(
+                f"Missing required configuration parameters: {', '.join(missing_params)}",
+                details={"missing_parameters": missing_params}
+            )
     
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -291,7 +319,10 @@ class BaseAPIClient(ABC):
         # Check for required environment variables
         missing_vars = [var for var in required_vars if os.getenv(var) is None]
         if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+            raise MeritAPIAuthenticationError(
+                f"Missing required environment variables: {', '.join(missing_vars)}",
+                details={"missing_variables": missing_vars}
+            )
         
         # Get environment variables
         env_vars = {}

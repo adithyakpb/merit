@@ -16,10 +16,10 @@ import requests
 
 from merit.core.logging import get_logger
 from merit.api.errors import (
-    APIConnectionError,
-    APIRateLimitError,
-    APIServerError,
-    APITimeoutError,
+    MeritAPIConnectionError,
+    MeritAPIRateLimitError,
+    MeritAPIServerError,
+    MeritAPITimeoutError,
 )
 
 logger = get_logger(__name__)
@@ -281,7 +281,7 @@ def adaptive_throttle(f: Callable) -> Callable:
                 is_rate_limit = e.response.status_code in (429, 503)
             elif "Service Temporarily Unavailable" in str(e):
                 is_rate_limit = True
-            elif isinstance(e, APIRateLimitError):
+            elif isinstance(e, MeritAPIRateLimitError):
                 is_rate_limit = True
             
             if is_rate_limit:
@@ -335,12 +335,14 @@ def with_retry(
     # Default exceptions to retry on
     if retry_on is None:
         retry_on = (
-            APIConnectionError, 
-            APITimeoutError, 
-            APIServerError,
+            MeritAPIConnectionError, 
+            MeritAPITimeoutError, 
+            MeritAPIServerError,
+            MeritAPIRateLimitError,
             requests.exceptions.ConnectionError,
             requests.exceptions.Timeout,
             requests.exceptions.ReadTimeout,
+            requests.exceptions.HTTPError,
         )
     
     # Default status codes to retry on
@@ -366,10 +368,10 @@ def with_retry(
                     status_code = None
                     
                     # Enhanced detection of rate limit responses
-                    if isinstance(e, APIRateLimitError):
+                    if isinstance(e, MeritAPIRateLimitError):
                         should_retry = True
                         retry_after = getattr(e, 'retry_after', None)
-                    elif isinstance(e, requests.exceptions.HTTPError) and hasattr(e, 'response'):
+                    elif hasattr(e, 'response') and hasattr(e.response, 'status_code'):
                         status_code = e.response.status_code
                         should_retry = status_code in retry_status_codes
                         
@@ -412,16 +414,20 @@ def with_retry(
             if last_exception is not None:
                 # Convert to API-specific error if it's a requests exception
                 if isinstance(last_exception, requests.exceptions.ConnectionError):
-                    raise APIConnectionError(
+                    merit_error = MeritAPIConnectionError(
                         "Failed to connect to the API service after multiple retries.",
                         details={"original_error": str(last_exception), "retries": retries}
-                    ) from last_exception
+                    )
+                    merit_error.__cause__ = last_exception
+                    raise merit_error
                 elif isinstance(last_exception, requests.exceptions.Timeout):
-                    raise APITimeoutError(
+                    merit_error = MeritAPITimeoutError(
                         "API request timed out after multiple retries.",
                         details={"original_error": str(last_exception), "retries": retries}
-                    ) from last_exception
-                elif isinstance(last_exception, requests.exceptions.HTTPError) and hasattr(last_exception, 'response'):
+                    )
+                    merit_error.__cause__ = last_exception
+                    raise merit_error
+                elif hasattr(last_exception, 'response') and hasattr(last_exception.response, 'status_code'):
                     # Handle rate limiting specifically
                     if last_exception.response.status_code == 429:
                         retry_after = None
@@ -431,26 +437,33 @@ def with_retry(
                             except (ValueError, TypeError):
                                 pass
                         
-                        raise APIRateLimitError(
+                        merit_error = MeritAPIRateLimitError(
                             "API rate limit exceeded and not resolved after multiple retries.",
                             details={"original_error": str(last_exception), "retries": retries},
                             retry_after=retry_after
-                        ) from last_exception
+                        )
+                        merit_error.__cause__ = last_exception
+                        raise merit_error
                     elif last_exception.response.status_code >= 500:
-                        raise APIServerError(
+                        merit_error = MeritAPIServerError(
                             "API server error persisted after multiple retries.",
                             details={"original_error": str(last_exception), "retries": retries, 
                                     "status_code": last_exception.response.status_code}
-                        ) from last_exception
+                        )
+                        merit_error.__cause__ = last_exception
+                        raise merit_error
                 
                 # If we can't convert it, re-raise the original
                 raise last_exception
             
             # This should never happen, but just in case
-            raise APIConnectionError(
+            merit_error = MeritAPIConnectionError(
                 "Failed after multiple retries with an unknown error.",
                 details={"retries": retries}
             )
+            if last_exception:
+                merit_error.__cause__ = last_exception
+            raise merit_error
         
         return wrapper
     
