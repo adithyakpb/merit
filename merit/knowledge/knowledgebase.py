@@ -12,6 +12,7 @@ from ..core.models import Document
 from .prompts import TOPIC_GENERATION_PROMPT
 from ..core.utils import detect_language, cosine_similarity, batch_iterator
 from ..core.logging import get_logger
+from ..storage import MongoDBStorage, DatabaseFactory
 
 logger = get_logger(__name__)
 
@@ -79,31 +80,29 @@ class KnowledgeBase:
     
     def __init__(
         self,
-        data: Union[pd.DataFrame, List[Dict[str, Any]]],
-        client: BaseAPIClient,
+        data: Union[pd.DataFrame, List[Dict[str, Any]], None] = None,
+        client: BaseAPIClient = None,
         columns: Optional[Sequence[str]] = None,
         seed: Optional[int] = None,
         min_topic_size: Optional[int] = None,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        storage_config: Optional[Dict[str, Any]] = None,
+        kb_id: Optional[str] = None,
     ):
         """
         Initialize the knowledge base.
         
         Args:
             data: The data to create the knowledge base from, either a pandas DataFrame or a list of dictionaries.
+                 Can be None if loading from storage.
             client: The API client to use for embeddings and text generation.
             columns: The columns to use from the data. If None, all columns are used.
             seed: The random seed to use.
             min_topic_size: The minimum number of documents to form a topic.
             batch_size: The batch size to use for embeddings.
+            storage_config: Configuration for persistent storage. If provided, enables storage integration.
+            kb_id: Knowledge base identifier for storage. If None, generates a unique ID.
         """
-        # Convert data to DataFrame if it's a list
-        if isinstance(data, list):
-            data = pd.DataFrame(data)
-        
-        if len(data) == 0:
-            raise ValueError("Cannot create a knowledge base from empty data")
-        
         # Set up random number generator
         self._rng = np.random.default_rng(seed=seed)
         
@@ -111,12 +110,38 @@ class KnowledgeBase:
         self._client = client
         self._batch_size = batch_size
         self._min_topic_size = min_topic_size or DEFAULT_MIN_TOPIC_SIZE
+        self._kb_id = kb_id or f"kb_{int(pd.Timestamp.now().timestamp())}"
         
-        # Create documents
-        self._documents = self._create_documents(data, columns)
+        # Initialize storage
+        self._storage = None
+        if storage_config:
+            self._storage = self._initialize_storage(storage_config)
+            logger.info(f"Initialized storage backend: {storage_config.get('type', 'unknown')}")
         
-        if len(self._documents) == 0:
-            raise ValueError("Cannot create a knowledge base with empty documents")
+        # Load or create documents
+        if data is not None:
+            # Convert data to DataFrame if it's a list
+            if isinstance(data, list):
+                data = pd.DataFrame(data)
+            
+            if len(data) == 0:
+                raise ValueError("Cannot create a knowledge base from empty data")
+            
+            # Create documents from data
+            self._documents = self._create_documents(data, columns)
+            
+            if len(self._documents) == 0:
+                raise ValueError("Cannot create a knowledge base with empty documents")
+        
+        elif self._storage:
+            # Load documents from storage
+            self._documents = self._load_documents_from_storage()
+            
+            if len(self._documents) == 0:
+                raise ValueError("No documents found in storage and no data provided")
+        
+        else:
+            raise ValueError("Either data or storage_config with existing data must be provided")
         
         # Create document index
         self._document_index = {doc.id: doc for doc in self._documents}
@@ -130,7 +155,11 @@ class KnowledgeBase:
         # Detect language
         self._language = self._detect_language()
         
-        logger.info(f"Created knowledge base with {len(self._documents)} documents in language '{self._language}'")
+        # Save to storage if configured and we have new data
+        if self._storage and data is not None:
+            self._save_documents_to_storage()
+        
+        logger.info(f"Created knowledge base '{self._kb_id}' with {len(self._documents)} documents in language '{self._language}'")
     
     def _create_documents(self, data: pd.DataFrame, columns: Optional[Sequence[str]] = None) -> List[Document]:
         """
@@ -169,6 +198,185 @@ class KnowledgeBase:
             documents.append(doc)
         
         return documents
+    
+    def _initialize_storage(self, storage_config: Dict[str, Any]):
+        """
+        Initialize the storage backend.
+        
+        Args:
+            storage_config: Storage configuration dictionary
+            
+        Returns:
+            Storage instance
+        """
+        try:
+            if storage_config.get("type") == "mongodb":
+                # Use MongoDB storage directly
+                mongodb_config = storage_config.get("mongodb", {})
+                # Set default collections for knowledge base
+                if "documents_collection" not in mongodb_config:
+                    mongodb_config["collection"] = f"kb_{self._kb_id}_documents"
+                return MongoDBStorage(mongodb_config)
+            else:
+                # Use DatabaseFactory for other storage types
+                return DatabaseFactory.create(storage_config)
+        except Exception as e:
+            logger.error(f"Failed to initialize storage: {e}")
+            raise
+    
+    def _save_documents_to_storage(self):
+        """
+        Save documents to the storage backend.
+        """
+        if not self._storage:
+            return
+        
+        try:
+            # Convert documents to storage format
+            storage_docs = []
+            for doc in self._documents:
+                storage_doc = {
+                    "kb_id": self._kb_id,
+                    "doc_id": doc.id,
+                    "content": doc.content,
+                    "metadata": doc.metadata,
+                    "embeddings": doc.embeddings.tolist() if doc.embeddings is not None else None,
+                    "topic_id": getattr(doc, 'topic_id', None),
+                    "reduced_embeddings": getattr(doc, 'reduced_embeddings', None),
+                    "created_at": pd.Timestamp.now().isoformat(),
+                    "language": self._language
+                }
+                storage_docs.append(storage_doc)
+            
+            # Store documents
+            success = self._storage.store(storage_docs)
+            if success:
+                logger.info(f"Saved {len(storage_docs)} documents to storage")
+            else:
+                logger.error("Failed to save documents to storage")
+                
+        except Exception as e:
+            logger.error(f"Error saving documents to storage: {e}")
+    
+    def _load_documents_from_storage(self) -> List[Document]:
+        """
+        Load documents from the storage backend.
+        
+        Returns:
+            List of Document objects
+        """
+        if not self._storage:
+            return []
+        
+        try:
+            # Query documents for this knowledge base
+            query = {"kb_id": self._kb_id}
+            storage_docs = self._storage.query(query=query, limit=10000)  # Large limit for now
+            
+            documents = []
+            for storage_doc in storage_docs:
+                # Create Document object
+                doc = Document(
+                    content=storage_doc["content"],
+                    metadata=storage_doc.get("metadata", {}),
+                    id=storage_doc["doc_id"]
+                )
+                
+                # Restore embeddings if available
+                if storage_doc.get("embeddings"):
+                    doc.embeddings = np.array(storage_doc["embeddings"])
+                
+                # Restore topic information
+                if storage_doc.get("topic_id") is not None:
+                    doc.topic_id = storage_doc["topic_id"]
+                
+                # Restore reduced embeddings
+                if storage_doc.get("reduced_embeddings"):
+                    doc.reduced_embeddings = storage_doc["reduced_embeddings"]
+                
+                documents.append(doc)
+            
+            logger.info(f"Loaded {len(documents)} documents from storage")
+            return documents
+            
+        except Exception as e:
+            logger.error(f"Error loading documents from storage: {e}")
+            return []
+    
+    def _save_embeddings_to_storage(self):
+        """
+        Save embeddings to storage for existing documents.
+        """
+        if not self._storage:
+            return
+        
+        try:
+            # Update documents with embeddings
+            for doc in self._documents:
+                if doc.embeddings is not None:
+                    update_data = {
+                        "$set": {
+                            "embeddings": doc.embeddings.tolist(),
+                            "updated_at": pd.Timestamp.now().isoformat()
+                        }
+                    }
+                    
+                    # Update in storage
+                    if hasattr(self._storage, 'update_one'):
+                        self._storage.update_one(
+                            {"kb_id": self._kb_id, "doc_id": doc.id},
+                            update_data
+                        )
+            
+            logger.info("Saved embeddings to storage")
+            
+        except Exception as e:
+            logger.error(f"Error saving embeddings to storage: {e}")
+    
+    def _save_topics_to_storage(self):
+        """
+        Save topic information to storage.
+        """
+        if not self._storage:
+            return
+        
+        try:
+            # Save topic assignments to documents
+            for doc in self._documents:
+                if hasattr(doc, 'topic_id'):
+                    update_data = {
+                        "$set": {
+                            "topic_id": doc.topic_id,
+                            "reduced_embeddings": getattr(doc, 'reduced_embeddings', None),
+                            "updated_at": pd.Timestamp.now().isoformat()
+                        }
+                    }
+                    
+                    # Update in storage
+                    if hasattr(self._storage, 'update_one'):
+                        self._storage.update_one(
+                            {"kb_id": self._kb_id, "doc_id": doc.id},
+                            update_data
+                        )
+            
+            # Save topic metadata to a separate collection
+            if hasattr(self._storage, 'insert_one') and self._topics_cache:
+                topics_collection = f"kb_{self._kb_id}_topics"
+                for topic_id, topic_name in self._topics_cache.items():
+                    topic_doc = {
+                        "kb_id": self._kb_id,
+                        "topic_id": topic_id,
+                        "topic_name": topic_name,
+                        "document_count": len(self.get_documents_by_topic(topic_id)),
+                        "created_at": pd.Timestamp.now().isoformat()
+                    }
+                    
+                    self._storage.insert_one(topic_doc, collection_name=topics_collection)
+            
+            logger.info("Saved topic information to storage")
+            
+        except Exception as e:
+            logger.error(f"Error saving topics to storage: {e}")
     
     def _detect_language(self) -> str:
         """
@@ -261,10 +469,14 @@ class KnowledgeBase:
         
         # Store embeddings in documents
         for doc, emb in zip(self._documents, all_embeddings):
-            doc.embeddings = emb
+            doc.embeddings = np.array(emb)
         
         # Cache embeddings
         self._embeddings_cache = np.array(all_embeddings)
+        
+        # Save embeddings to storage if configured
+        if self._storage:
+            self._save_embeddings_to_storage()
         
         return self._embeddings_cache
     
@@ -365,6 +577,11 @@ class KnowledgeBase:
                     topics[topic_id] = topic_name
             
             logger.info(f"Found {len(topics)} topics in knowledge base")
+            
+            # Save topics to storage if configured
+            if self._storage:
+                self._save_topics_to_storage()
+            
             return topics
         
         except Exception as e:

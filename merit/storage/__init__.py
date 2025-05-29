@@ -14,10 +14,12 @@ from .persistence import (
 
 # Import specialized storage implementations
 from .file_storage import FileStorage
+from .mongodb_storage import MongoDBStorage
 
 __all__ = [
     'BaseStorage',
     'SQLiteStorage',
     'FileStorage',
+    'MongoDBStorage',
     'DatabaseFactory'
 ]

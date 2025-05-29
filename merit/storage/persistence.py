@@ -517,5 +517,8 @@ class DatabaseFactory:
         elif storage_type == "file":
             from .file_storage import FileStorage
             return FileStorage(config.get("file", {}))
+        elif storage_type == "mongodb":
+            from .mongodb_storage import MongoDBStorage
+            return MongoDBStorage(config.get("mongodb", {}))
         else:
             raise ValueError(f"Unsupported storage type: {storage_type}")
