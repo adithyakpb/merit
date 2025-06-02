@@ -99,10 +99,26 @@ class Response:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
+        serializable_documents = None
+        if self.documents:
+            serializable_documents = []
+            for doc in self.documents:
+                if hasattr(doc, 'to_dict'):
+                    serializable_documents.append(doc.to_dict())
+                elif isinstance(doc, Document): # If it's a Document object without to_dict
+                    serializable_documents.append({
+                        "id": doc.id,
+                        "content": doc.content,
+                        "metadata": doc.metadata,
+                        "topic_id": doc.topic_id
+                    })
+                else:
+                    serializable_documents.append(doc) # Fallback for other types
+
         return {
             "id": self.id,
             "content": self.content,
-            "documents": self.documents,
+            "documents": serializable_documents,
             "metadata": self.metadata,
         }
     
@@ -138,7 +154,7 @@ class Document:
     """
     
     content: str
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any] = field(default_factory=dict) # Added default_factory
     id: str = None
     embeddings: Optional[List[float]] = None
     reduced_embeddings: Optional[List[float]] = None
@@ -360,11 +376,11 @@ class TestSet:
                             # Create new document
                             document = Document(
                                 content=document_content,
-                                metadata={},
+                                metadata=row.get("document_metadata", {}), # Allow loading metadata if present
                                 id=document_id
                             )
-                        
-                        # Create TestItem
+        
+        # Create TestItem
                         metadata = {k: v for k, v in row.items() 
                                    if k not in ['input', 'reference_answer', 'document_id', 'document_content']}
                         

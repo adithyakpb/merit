@@ -410,8 +410,10 @@ class MongoDBStorage(BaseStorage):
             if sort:
                 cursor = cursor.sort(sort)
             
-            cursor = cursor.skip(skip).limit(limit)
-            
+            cursor = cursor.skip(skip)
+            if limit is not None and limit > 0:
+                cursor = cursor.limit(limit)
+
             return [self._convert_document_for_output(doc) for doc in cursor]
         except Exception as e:
             self.logger.error(f"Error finding documents: {e}")
