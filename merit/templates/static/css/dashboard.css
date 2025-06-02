@@ -1,0 +1,421 @@
+/* MERIT Dashboard Core Styles */
+
+:root {
+    /* Color palette */
+    --primary-color: #4a6fa5;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --info-color: #17a2b8;
+    
+    /* Layout */
+    --border-radius: 8px;
+    --box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    --transition: all 0.3s ease;
+    
+    /* Grid system */
+    --grid-columns: 12;
+    --grid-gap: 20px;
+    
+    /* Widget sizes */
+    --widget-min-height: 120px;
+    --widget-padding: 16px;
+}
+
+/* Theme variables - Light theme (default) */
+:root {
+    --bg-color: #f5f7fa;
+    --card-bg-color: #ffffff;
+    --text-color: #333333;
+    --text-muted: #6c757d;
+    --border-color: #eeeeee;
+    --hover-color: #e9ecef;
+    --shadow-color: rgba(0,0,0,0.1);
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+    --bg-color: #121212;
+    --card-bg-color: #1e1e1e;
+    --text-color: #e6e6e6;
+    --text-muted: #adb5bd;
+    --border-color: #333333;
+    --hover-color: #333333;
+    --shadow-color: rgba(0,0,0,0.3);
+    --box-shadow: 0 2px 4px var(--shadow-color);
+}
+
+/* Base styles */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, 
+                 "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.6;
+    color: var(--text-color);
+    background-color: var(--bg-color);
+    margin: 0;
+    padding: 0;
+    transition: var(--transition);
+}
+
+/* Dashboard container */
+.dashboard-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Header */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.dashboard-title {
+    margin: 0;
+    color: var(--primary-color);
+    font-size: 2rem;
+    font-weight: 600;
+}
+
+.dashboard-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Grid system */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--grid-columns), 1fr);
+    gap: var(--grid-gap);
+    margin-bottom: 30px;
+}
+
+/* Widget base styles */
+.widget {
+    background: var(--card-bg-color);
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: var(--widget-padding);
+    min-height: var(--widget-min-height);
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+
+.widget:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px var(--shadow-color);
+}
+
+.widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.widget-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.widget-subtitle {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.widget-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.widget-action {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: var(--transition);
+}
+
+.widget-action:hover {
+    background: var(--hover-color);
+    color: var(--text-color);
+}
+
+.widget-content {
+    height: calc(100% - 60px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Widget types */
+.widget-gauge {
+    text-align: center;
+}
+
+.widget-counter {
+    text-align: center;
+}
+
+.widget-counter .counter-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin-bottom: 5px;
+}
+
+.widget-counter .counter-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.widget-currency .currency-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--success-color);
+    margin-bottom: 5px;
+}
+
+.widget-currency .currency-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.widget-time-series {
+    grid-column: span 4;
+}
+
+.widget-heatmap {
+    grid-column: span 3;
+    grid-row: span 2;
+}
+
+/* Status indicators */
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.status-success {
+    background-color: var(--success-color);
+}
+
+.status-warning {
+    background-color: var(--warning-color);
+}
+
+.status-danger {
+    background-color: var(--danger-color);
+}
+
+.status-info {
+    background-color: var(--info-color);
+}
+
+/* Metric cards */
+.metric-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin-bottom: 8px;
+}
+
+.metric-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.metric-change {
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.metric-change.positive {
+    color: var(--success-color);
+}
+
+.metric-change.negative {
+    color: var(--danger-color);
+}
+
+.metric-change.neutral {
+    color: var(--text-muted);
+}
+
+/* Charts container */
+.chart-container {
+    width: 100%;
+    height: 200px;
+    position: relative;
+}
+
+.widget-time-series .chart-container {
+    height: 150px;
+}
+
+.widget-heatmap .chart-container {
+    height: 300px;
+}
+
+/* Loading states */
+.widget-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+}
+
+.spinner {
+    border: 3px solid var(--border-color);
+    border-top: 3px solid var(--primary-color);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Error states */
+.widget-error {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    color: var(--danger-color);
+    text-align: center;
+}
+
+.widget-error-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+}
+
+.widget-error-message {
+    font-size: 0.875rem;
+}
+
+/* Responsive design */
+@media (max-width: 1200px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(8, 1fr);
+    }
+    
+    .widget-time-series {
+        grid-column: span 8;
+    }
+    
+    .widget-heatmap {
+        grid-column: span 4;
+    }
+}
+
+@media (max-width: 768px) {
+    .dashboard-container {
+        padding: 15px;
+    }
+    
+    .dashboard-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 15px;
+    }
+    
+    .widget-time-series,
+    .widget-heatmap {
+        grid-column: span 4;
+    }
+    
+    .dashboard-header {
+        flex-direction: column;
+        gap: 15px;
+        text-align: center;
+    }
+    
+    .dashboard-controls {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .widget {
+        grid-column: span 1;
+    }
+}
+
+/* Utility classes */
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+
+.mb-0 { margin-bottom: 0; }
+.mb-1 { margin-bottom: 8px; }
+.mb-2 { margin-bottom: 16px; }
+.mb-3 { margin-bottom: 24px; }
+
+.mt-0 { margin-top: 0; }
+.mt-1 { margin-top: 8px; }
+.mt-2 { margin-top: 16px; }
+.mt-3 { margin-top: 24px; }
+
+.d-flex { display: flex; }
+.d-block { display: block; }
+.d-none { display: none; }
+
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.align-center { align-items: center; }
+
+/* Animation classes */
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(-20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}

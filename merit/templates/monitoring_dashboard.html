@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MERIT Real-Time Monitoring Dashboard</title>
+    
+    <!-- External dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    
+    <!-- MERIT CSS -->
+    <link rel="stylesheet" href="static/css/dashboard.css">
+    <link rel="stylesheet" href="static/css/monitoring.css">
+    
+    <style>
+        /* Theme toggle button */
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background-color: var(--card-bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            color: var(--text-color);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        
+        .theme-toggle:hover {
+            background-color: var(--hover-color);
+        }
+        
+        .connection-status {
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .alert-panel {
+            display: none;
+        }
+        
+        .alert-panel.show {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+    </style>
+</head>
+<body>
+    <!-- Dashboard Header -->
+    <div class="dashboard-header">
+        <h1 class="dashboard-title">MERIT Monitoring Dashboard</h1>
+        <div class="dashboard-controls">
+            <div class="connection-status" id="connection-status">
+                <span class="status-indicator status-info"></span>
+                Connecting...
+            </div>
+            <button id="theme-toggle" class="theme-toggle">
+                <span id="theme-icon">🌙</span>
+                <span id="theme-text">Dark Mode</span>
+            </button>
+            <div class="data-stream-indicator">
+                <span class="stream-dot" id="stream-indicator"></span>
+                <span id="stream-text">Live Data</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Alert Panel -->
+    <div id="alert-panel" class="alert-panel">
+        <div class="alert-title" id="alert-title">Alert</div>
+        <div class="alert-message" id="alert-message">Alert message will appear here</div>
+        <div class="alert-timestamp" id="alert-timestamp"></div>
+    </div>
+    
+    <!-- Dashboard Container -->
+    <div class="dashboard-container">
+        <!-- Metrics will be dynamically generated here -->
+        <div id="dashboard-grid" class="dashboard-grid">
+            <!-- Loading indicator -->
+            <div class="widget" style="grid-column: span 12; text-align: center; padding: 40px;">
+                <div class="spinner"></div>
+                <p style="margin-top: 20px;">Loading dashboard configuration...</p>
+            </div>
+        </div>
+        
+        <!-- RAG Monitoring Section (will be shown if RAG metrics are available) -->
+        <div id="rag-section" class="rag-section" style="display: none;">
+            <h2 class="rag-section-title">RAG System Monitoring</h2>
+            <div id="rag-grid" class="dashboard-grid">
+                <!-- RAG-specific widgets will be added here -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Configuration Panel (hidden by default) -->
+    <div id="config-panel" style="display: none;">
+        <h3>Dashboard Configuration</h3>
+        <div id="metric-selector">
+            <!-- Metric selection checkboxes will be added here -->
+        </div>
+        <button id="apply-config">Apply Configuration</button>
+        <button id="reset-config">Reset to Default</button>
+    </div>
+    
+    <!-- MERIT JavaScript -->
+    <script src="static/js/metrics-engine.js"></script>
+    <script src="static/components/metric-widgets.js"></script>
+    
+    <script>
+        // Dashboard configuration - this would normally come from the backend
+        const DASHBOARD_CONFIG = {
+            "context": "monitoring",
+            "metrics": [
+                "Request Volume",
+                "Latency", 
+                "Token Volume",
+                "Error Rate",
+                "Cost Estimate"
+            ],
+            "rag_metrics": [
+                "Correctness",
+                "Faithfulness", 
+                "Relevance",
+                "ContextPrecision"
+            ],
+            "layout": "grid",
+            "refresh_interval": 5000,
+            "real_time": true,
+            "widgets": [],
+            "layout_grid": {
+                "type": "grid",
+                "columns": 12,
+                "items": []
+            }
+        };
+        
+        // Global instances
+        let metricsEngine;
+        let widgetFactory;
+        let currentTheme = 'light';
+        
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Initializing MERIT Monitoring Dashboard...');
+            
+            // Initialize theme
+            initializeTheme();
+            
+            // Initialize metrics engine
+            initializeMetricsEngine();
+            
+            // Initialize widget factory
+            initializeWidgetFactory();
+            
+            // Generate dashboard
+            generateDashboard();
+            
+            // Set up event listeners
+            setupEventListeners();
+            
+            console.log('Dashboard initialization complete');
+        });
+        
+        function initializeTheme() {
+            // Check for saved theme preference
+            const savedTheme = localStorage.getItem('merit-theme');
+            if (savedTheme) {
+                currentTheme = savedTheme;
+                if (currentTheme === 'dark') {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    updateThemeToggle();
+                }
+            }
+        }
+        
+        function initializeMetricsEngine() {
+            // Initialize with simulation for demo
+            metricsEngine = new RealTimeMetricsEngine({
+                websocketUrl: 'ws://localhost:8000/ws/metrics',
+                reconnectInterval: 5000,
+                maxReconnectAttempts: 5,
+                bufferSize: 1000,
+                updateInterval: 1000
+            });
+            
+            // Subscribe to connection status
+            metricsEngine.subscribe('connection', (data) => {
+                updateConnectionStatus(data.status);
+            });
+            
+            // Subscribe to alerts
+            metricsEngine.subscribe('alerts', (data) => {
+                showAlert(data);
+            });
+            
+            // Start simulation for demo purposes
+            // In production, this would connect to real WebSocket
+            setTimeout(() => {
+                console.log('Starting metrics simulation for demo...');
+                metricsEngine.startSimulation();
+            }, 2000);
+        }
+        
+        function initializeWidgetFactory() {
+            widgetFactory = new MetricWidgetFactory(metricsEngine);
+        }
+        
+        function generateDashboard() {
+            const dashboardGrid = document.getElementById('dashboard-grid');
+            const ragGrid = document.getElementById('rag-grid');
+            const ragSection = document.getElementById('rag-section');
+            
+            // Clear loading indicator
+            dashboardGrid.innerHTML = '';
+            
+            // Generate monitoring widgets
+            const monitoringWidgets = generateMonitoringWidgets();
+            monitoringWidgets.forEach(config => {
+                widgetFactory.createWidget(config, dashboardGrid);
+            });
+            
+            // Generate RAG widgets if RAG metrics are available
+            if (DASHBOARD_CONFIG.rag_metrics && DASHBOARD_CONFIG.rag_metrics.length > 0) {
+                ragSection.style.display = 'block';
+                const ragWidgets = generateRAGWidgets();
+                ragWidgets.forEach(config => {
+                    widgetFactory.createWidget(config, ragGrid);
+                });
+            }
+        }
+        
+        function generateMonitoringWidgets() {
+            const widgets = [];
+            
+            // Request Volume Counter
+            widgets.push({
+                id: 'widget_request_volume',
+                metric_name: 'Request Volume',
+                type: 'counter',
+                title: 'Request Volume',
+                description: 'Number of requests processed',
+                category: 'USAGE',
+                size: { width: 2, height: 1 },
+                refresh_interval: 5000,
+                chart_config: { responsive: true }
+            });
+            
+            // Latency Gauge
+            widgets.push({
+                id: 'widget_latency',
+                metric_name: 'Latency',
+                type: 'gauge',
+                title: 'Latency',
+                description: 'Response time in seconds',
+                category: 'PERFORMANCE',
+                size: { width: 2, height: 2 },
+                refresh_interval: 5000,
+                chart_config: {
+                    min: 0,
+                    max: 5,
+                    thresholds: [1, 2, 3],
+                    colors: ['#28a745', '#ffc107', '#fd7e14', '#dc3545']
+                }
+            });
+            
+            // Token Volume Time Series
+            widgets.push({
+                id: 'widget_token_volume',
+                metric_name: 'Token Volume',
+                type: 'time_series',
+                title: 'Token Usage Over Time',
+                description: 'Token consumption trends',
+                category: 'USAGE',
+                size: { width: 4, height: 2 },
+                refresh_interval: 5000,
+                chart_config: {
+                    time_window: '1h',
+                    fill: true
+                }
+            });
+            
+            // Error Rate Gauge
+            widgets.push({
+                id: 'widget_error_rate',
+                metric_name: 'Error Rate',
+                type: 'gauge',
+                title: 'Error Rate',
+                description: 'Percentage of failed requests',
+                category: 'PERFORMANCE',
+                size: { width: 2, height: 2 },
+                refresh_interval: 5000,
+                chart_config: {
+                    min: 0,
+                    max: 1,
+                    thresholds: [0.01, 0.05, 0.1],
+                    colors: ['#28a745', '#ffc107', '#fd7e14', '#dc3545']
+                }
+            });
+            
+            // Cost Display
+            widgets.push({
+                id: 'widget_cost_estimate',
+                metric_name: 'Cost Estimate',
+                type: 'currency_display',
+                title: 'Cost Estimate',
+                description: 'Estimated cost in USD',
+                category: 'COST',
+                size: { width: 2, height: 1 },
+                refresh_interval: 30000,
+                chart_config: { currency: 'USD' }
+            });
+            
+            // Latency Time Series
+            widgets.push({
+                id: 'widget_latency_trend',
+                metric_name: 'Latency',
+                type: 'time_series',
+                title: 'Latency Trend',
+                description: 'Response time over time',
+                category: 'PERFORMANCE',
+                size: { width: 4, height: 2 },
+                refresh_interval: 5000,
+                chart_config: {
+                    time_window: '1h',
+                    fill: false
+                }
+            });
+            
+            return widgets;
+        }
+        
+        function generateRAGWidgets() {
+            const widgets = [];
+            
+            // Correctness Metric Card
+            widgets.push({
+                id: 'widget_correctness',
+                metric_name: 'Correctness',
+                type: 'metric_card',
+                title: 'Correctness',
+                description: 'Answer accuracy score',
+                category: 'QUALITY',
+                size: { width: 2, height: 1 },
+                refresh_interval: 10000,
+                chart_config: { responsive: true }
+            });
+            
+            // Faithfulness Metric Card
+            widgets.push({
+                id: 'widget_faithfulness',
+                metric_name: 'Faithfulness',
+                type: 'metric_card',
+                title: 'Faithfulness',
+                description: 'Adherence to source documents',
+                category: 'QUALITY',
+                size: { width: 2, height: 1 },
+                refresh_interval: 10000,
+                chart_config: { responsive: true }
+            });
+            
+            // Relevance Metric Card
+            widgets.push({
+                id: 'widget_relevance',
+                metric_name: 'Relevance',
+                type: 'metric_card',
+                title: 'Relevance',
+                description: 'Answer relevance to query',
+                category: 'QUALITY',
+                size: { width: 2, height: 1 },
+                refresh_interval: 10000,
+                chart_config: { responsive: true }
+            });
+            
+            // Context Precision Heatmap
+            widgets.push({
+                id: 'widget_context_precision',
+                metric_name: 'ContextPrecision',
+                type: 'heatmap',
+                title: 'Context Precision',
+                description: 'Retrieved document relevance',
+                category: 'QUALITY',
+                size: { width: 3, height: 3 },
+                refresh_interval: 10000,
+                chart_config: {
+                    color_scale: 'viridis',
+                    show_scale: true
+                }
+            });
+            
+            // Faithfulness vs Relevance Correlation
+            widgets.push({
+                id: 'widget_faithfulness_correlation',
+                metric_name: 'Faithfulness',
+                type: 'correlation_chart',
+                title: 'Faithfulness vs Relevance',
+                description: 'Quality metrics correlation',
+                category: 'QUALITY',
+                size: { width: 3, height: 2 },
+                refresh_interval: 10000,
+                chart_config: { responsive: true }
+            });
+            
+            return widgets;
+        }
+        
+        function setupEventListeners() {
+            // Theme toggle
+            const themeToggle = document.getElementById('theme-toggle');
+            themeToggle.addEventListener('click', toggleTheme);
+            
+            // Configuration panel toggle (if needed)
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'k') {
+                    e.preventDefault();
+                    toggleConfigPanel();
+                }
+            });
+            
+            // Window resize handler
+            window.addEventListener('resize', () => {
+                // Trigger chart resize for all widgets
+                setTimeout(() => {
+                    widgetFactory.chartInstances.forEach(chart => {
+                        chart.resize();
+                    });
+                }, 100);
+            });
+        }
+        
+        function toggleTheme() {
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            
+            if (currentTheme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+            
+            localStorage.setItem('merit-theme', currentTheme);
+            updateThemeToggle();
+            
+            // Update chart colors
+            setTimeout(() => {
+                widgetFactory.chartInstances.forEach(chart => {
+                    chart.update();
+                });
+            }, 100);
+        }
+        
+        function updateThemeToggle() {
+            const themeIcon = document.getElementById('theme-icon');
+            const themeText = document.getElementById('theme-text');
+            
+            if (currentTheme === 'dark') {
+                themeIcon.textContent = '☀️';
+                themeText.textContent = 'Light Mode';
+            } else {
+                themeIcon.textContent = '🌙';
+                themeText.textContent = 'Dark Mode';
+            }
+        }
+        
+        function updateConnectionStatus(status) {
+            const statusElement = document.getElementById('connection-status');
+            const indicator = statusElement.querySelector('.status-indicator');
+            const streamIndicator = document.getElementById('stream-indicator');
+            const streamText = document.getElementById('stream-text');
+            
+            // Remove all status classes
+            indicator.className = 'status-indicator';
+            streamIndicator.className = 'stream-dot';
+            
+            switch (status) {
+                case 'connected':
+                    indicator.classList.add('status-success');
+                    statusElement.innerHTML = '<span class="status-indicator status-success"></span>Connected';
+                    streamIndicator.classList.add('connected');
+                    streamText.textContent = 'Live Data';
+                    break;
+                    
+                case 'disconnected':
+                    indicator.classList.add('status-danger');
+                    statusElement.innerHTML = '<span class="status-indicator status-danger"></span>Disconnected';
+                    streamIndicator.classList.add('error');
+                    streamText.textContent = 'Offline';
+                    break;
+                    
+                case 'reconnecting':
+                    indicator.classList.add('status-warning');
+                    statusElement.innerHTML = '<span class="status-indicator status-warning"></span>Reconnecting...';
+                    streamIndicator.classList.add('paused');
+                    streamText.textContent = 'Reconnecting';
+                    break;
+                    
+                case 'error':
+                    indicator.classList.add('status-danger');
+                    statusElement.innerHTML = '<span class="status-indicator status-danger"></span>Connection Error';
+                    streamIndicator.classList.add('error');
+                    streamText.textContent = 'Error';
+                    break;
+                    
+                default:
+                    indicator.classList.add('status-info');
+                    statusElement.innerHTML = '<span class="status-indicator status-info"></span>Connecting...';
+                    streamIndicator.classList.add('paused');
+                    streamText.textContent = 'Connecting';
+            }
+        }
+        
+        function showAlert(alertData) {
+            const alertPanel = document.getElementById('alert-panel');
+            const alertTitle = document.getElementById('alert-title');
+            const alertMessage = document.getElementById('alert-message');
+            const alertTimestamp = document.getElementById('alert-timestamp');
+            
+            alertTitle.textContent = alertData.title || 'Alert';
+            alertMessage.textContent = alertData.message || 'Alert message';
+            alertTimestamp.textContent = new Date().toLocaleString();
+            
+            // Set alert type
+            alertPanel.className = `alert-panel ${alertData.type || 'info'} show`;
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                alertPanel.classList.remove('show');
+            }, 5000);
+        }
+        
+        function toggleConfigPanel() {
+            const configPanel = document.getElementById('config-panel');
+            configPanel.style.display = configPanel.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (metricsEngine) {
+                metricsEngine.disconnect();
+            }
+            if (widgetFactory) {
+                widgetFactory.destroyAllWidgets();
+            }
+        });
+    </script>
+</body>
+</html>

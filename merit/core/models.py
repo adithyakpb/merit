@@ -23,14 +23,24 @@ class Input:
     A class representing an input to the evaluated system.
     
     Attributes:
-        content: The input content
+        user_input: The raw user question/input
+        prompt_prefix: Text before user input in the full prompt
+        prompt_suffix: Text after user input in the full prompt
         metadata: Additional metadata
         id: The ID of the input
     """
     
-    content: str
+    user_input: str
+    prompt_prefix: str = ""
+    prompt_suffix: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict) 
     id: str = None
+    
+    
+    @property
+    def content(self) -> str:
+        """Reconstruct the complete content of the Input"""
+        return f"{self.prompt_prefix}{self.user_input}{self.prompt_suffix}"
     
     def __post_init__(self):
         if self.id is None:
@@ -62,7 +72,7 @@ class Response:
     A class representing a response from the evaluated system.
     
     Attributes:
-        content: The answer content
+        content: The raw response content (e.g., LLM completion)
         documents: The documents used to generate the answer
         metadata: Additional metadata
         id: The ID of the response

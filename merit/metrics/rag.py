@@ -20,28 +20,154 @@ from ..core.logging import get_logger
 logger = get_logger(__name__)
 
 from .llm_measured import LLMMeasuredBaseMetric
+from .base import BaseMetric
+from ..core.models import Input, Response
+from ..core.prompts import Prompt
+from ..monitoring.models import LLMRequest, LLMResponse
 
 class CorrectnessMetric(LLMMeasuredBaseMetric):
-    """Metric for evaluating the correctness of an answer."""
+    """Metric for evaluating the correctness of an answer in both monitoring and evaluation contexts."""
     name = "Correctness"
     description = "Measures how accurate and correct the answer is"
     greater_is_better = True
-    context = MetricContext.EVALUATION
+    context = MetricContext.BOTH  # Works in both contexts
     category = MetricCategory.QUALITY
     
-    def __init__(self, llm_client=None, agent_description=None, include_raw_response=False):
+    # Model-based requirements
+    monitoring_requires = {
+        "request": LLMRequest,
+        "response": LLMResponse
+    }
+    evaluation_requires = {
+        "input": Input,
+        "response": Response
+    }
+    
+    def __init__(self, mode=None, llm_client=None, agent_description=None, include_raw_response=False):
         """
         Initialize the correctness metric.
         
         Args:
+            mode: The context mode for this metric instance
             llm_client: The LLM client
             agent_description: Description of the agent
             include_raw_response: Whether to include the raw LLM response in the output
         """
+        super().__init__(mode=mode)
+        self.llm_client = llm_client
         self.agent_description = agent_description or "This agent is a chatbot that answers input from users."
-        super().__init__(prompt=CORRECTNESS_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response)
+        self.include_raw_response = include_raw_response
     
-    def _format_prompt(self, prompt, test_item, response):
+    def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
+        """
+        Calculate correctness in monitoring context.
+        
+        Args:
+            request: LLMRequest object
+            response: LLMResponse object
+            
+        Returns:
+            Dict containing metric result
+        """
+        if not self.llm_client:
+            raise ValueError("LLM client required for correctness monitoring")
+        
+        # LLM-based evaluation for monitoring
+        prompt = CORRECTNESS_EVALUATION_PROMPT.safe_format(
+            document_content=getattr(response, 'context', ""),  # Context if available
+            input=request.input.content,
+            reference_answer="",  # No reference in monitoring
+            model_answer=response.completion
+        )
+        
+        try:
+            llm_response = self.llm_client.generate_text(prompt)
+            from ..core.utils import parse_json
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
+        except Exception as e:
+            logger.error(f"Error in LLM-based correctness evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def calculate_evaluation(self, input_obj: Input, response: Response, reference: Response, llm_client=None) -> dict:
+        """
+        Calculate correctness in evaluation context.
+        
+        Args:
+            input_obj: Input object
+            response_obj: Response object
+            llm_client: Optional LLM client for evaluation
+            
+        Returns:
+            Dict containing metric result
+        """
+        # Use provided client or stored client
+        client = llm_client or self.llm_client
+        
+        if not client:
+            #raise a MERIT error. do this every where
+            raise ValueError("LLM client required for correctness evaluation")
+        
+        # Format prompt for evaluation context
+        prompt = CORRECTNESS_EVALUATION_PROMPT.safe_format(
+            document_content=str(response.documents),  
+            input=input_obj.content,
+            reference_answer=reference.content if reference else "",
+            model_answer=response.content
+        )
+        
+        try:
+            llm_response = client.generate_text(prompt)
+            from ..core.utils import parse_json
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}#TODO get some metadata if needed
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
+        except Exception as e:
+            logger.error(f"Error in correctness evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
+    
+    def _format_prompt(self, prompt: Prompt, test_item, response):
         """
         Format the prompt with test item and response data.
         
@@ -78,289 +204,572 @@ class CorrectnessMetric(LLMMeasuredBaseMetric):
             return str(prompt)
     
     
-    def _get_custom_measurements(self, llm_response, test_item, response, result, llm_custom_measurements=None):
-        """
-        Get custom measurements based on the LLM response.
-        
-        Args:
-            llm_response: The raw response from the LLM
-            test_item: The test item
-            response: The response
-            result: The processed result dictionary
-            llm_custom_measurements: Custom measurements provided by the LLM, if any
-            
-        Returns:
-            dict or None: Custom measurements to add to the result
-        """
-        # Extract errors if present in the LLM response
-        try:
-            from ..core.utils import parse_json
-            json_output = parse_json(llm_response, return_type="object")
-            errors = json_output.get("errors", [])
-            if errors:
-                return {"errors": errors}
-        except Exception:
-            pass
-        return None
-    
 class FaithfulnessMetric(LLMMeasuredBaseMetric):
     """
-    Metric for evaluating the faithfulness of an answer to the retrieved documents.
+    Metric for evaluating the faithfulness of an answer to the retrieved documents in both monitoring and evaluation contexts.
     
     This metric measures how well the answer sticks to the information in the documents.
     """
     name = "Faithfulness"
     description = "Measures how faithful the answer is to the retrieved documents"
     greater_is_better = True
-    context = MetricContext.EVALUATION
+    context = MetricContext.BOTH  # Works in both contexts
     category = MetricCategory.QUALITY
     
-    def __init__(self, llm_client=None, include_raw_response=False):
+    # Model-based requirements
+    monitoring_requires = {
+        "request": LLMRequest,
+        "response": LLMResponse
+    }
+    evaluation_requires = {
+        "input": Input,
+        "response": Response
+    }
+    
+    def __init__(self, mode=None, llm_client=None, include_raw_response=False):
         """
         Initialize the faithfulness metric.
         
         Args:
+            mode: The context mode for this metric instance
             llm_client: The LLM client
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(prompt=FAITHFULNESS_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response)
+        super().__init__(mode=mode)
+        self.llm_client = llm_client
+        self.include_raw_response = include_raw_response
     
-    def _format_prompt(self, prompt, test_item, response):
+    def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
-        Format the prompt with test item and response data.
+        Calculate faithfulness in monitoring context.
         
         Args:
-            prompt: The prompt template
-            test_item: The test item
-            response: The response
+            request: LLMRequest object
+            response: LLMResponse object
             
         Returns:
-            str: The formatted prompt
+            Dict containing metric result
         """
-        # Get answer text
-        answer_text = response.content if hasattr(response, "content") else str(response)
+        if not self.llm_client:
+            raise ValueError("LLM client required for faithfulness monitoring")
         
-        # Try to get documents from different sources
-        documents = []
-        if hasattr(response, "documents") and response.documents:
-            documents = response.documents
-        elif hasattr(test_item, "document") and hasattr(test_item.document, "content"):
-            documents = [test_item.document.content]
-        elif hasattr(test_item, "document_content"):
-            documents = [test_item.document_content]
-        elif isinstance(test_item, dict) and "document_content" in test_item:
-            documents = [test_item["document_content"]]
+        # Get documents from response context
+        documents = getattr(response, 'context', "") or str(getattr(response, 'documents', ""))
         
-        if not documents:
-            logger.warning(f"No documents provided for faithfulness evaluation")
-            return prompt.safe_format(document_content="", model_answer=answer_text)
+        # LLM-based evaluation for monitoring
+        prompt = FAITHFULNESS_EVALUATION_PROMPT.safe_format(
+            document_content=documents,
+            model_answer=response.completion
+        )
         
-        # Format the prompt
         try:
-            return prompt.safe_format(
-                document_content=documents[0],  # Use the first document for now
-                model_answer=answer_text
-            )
-        except Exception as e:
-            logger.warning(f"Error formatting faithfulness prompt: {e}")
-            return str(prompt)
-    
-    
-    def _get_custom_measurements(self, llm_response, test_item, response, result, llm_custom_measurements=None):
-        """
-        Get custom measurements based on the LLM response.
-        
-        Args:
-            llm_response: The raw response from the LLM
-            test_item: The test item
-            response: The response
-            result: The processed result dictionary
-            llm_custom_measurements: Custom measurements provided by the LLM, if any
-            
-        Returns:
-            dict or None: Custom measurements to add to the result
-        """
-        # Extract hallucinations if present in the LLM response
-        try:
+            llm_response = self.llm_client.generate_text(prompt)
             from ..core.utils import parse_json
-            json_output = parse_json(llm_response, return_type="object")
-            hallucinations = json_output.get("hallucinations", [])
-            if hallucinations:
-                return {"hallucinations": hallucinations}
-        except Exception:
-            pass
-        return None
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
+        except Exception as e:
+            logger.error(f"Error in LLM-based faithfulness evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def calculate_evaluation(self, input_obj: Input, response: Response, reference: Response, llm_client=None) -> dict:
+        """
+        Calculate faithfulness in evaluation context.
+        
+        Args:
+            input_obj: Input object
+            response: Response object
+            reference: Reference response object
+            llm_client: Optional LLM client for evaluation
+            
+        Returns:
+            Dict containing metric result
+        """
+        # Use provided client or stored client
+        client = llm_client or self.llm_client
+        
+        if not client:
+            raise ValueError("LLM client required for faithfulness evaluation")
+        
+        # Format prompt for evaluation context
+        prompt = FAITHFULNESS_EVALUATION_PROMPT.safe_format(
+            document_content=str(response.documents) if response.documents else "",
+            model_answer=response.content
+        )
+        
+        try:
+            llm_response = client.generate_text(prompt)
+            from ..core.utils import parse_json
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
+        except Exception as e:
+            logger.error(f"Error in faithfulness evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
+    
 
 class RelevanceMetric(LLMMeasuredBaseMetric):
     """
-    Metric for evaluating the relevance of an answer to the input.
+    Metric for evaluating the relevance of an answer to the input in both monitoring and evaluation contexts.
     
     This metric measures how well the answer addresses the input.
     """
     name = "Relevance"
     description = "Measures how relevant the answer is to the input"
     greater_is_better = True
-    context = MetricContext.EVALUATION
+    context = MetricContext.BOTH  # Works in both contexts
     category = MetricCategory.QUALITY
     
-    def __init__(self, llm_client=None, include_raw_response=False):
+    # Model-based requirements
+    monitoring_requires = {
+        "request": LLMRequest,
+        "response": LLMResponse
+    }
+    evaluation_requires = {
+        "input": Input,
+        "response": Response
+    }
+    
+    def __init__(self, mode=None, llm_client=None, include_raw_response=False):
         """
         Initialize the relevance metric.
         
         Args:
+            mode: The context mode for this metric instance
             llm_client: The LLM client
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(prompt=RELEVANCE_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response)
+        super().__init__(mode=mode)
+        self.llm_client = llm_client
+        self.include_raw_response = include_raw_response
     
-    def _format_prompt(self, prompt, test_item, response):
+    def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
-        Format the prompt with test item and response data.
+        Calculate relevance in monitoring context.
         
         Args:
-            prompt: The prompt template
-            test_item: The test item
-            response: The response
+            request: LLMRequest object
+            response: LLMResponse object
             
         Returns:
-            str: The formatted prompt
+            Dict containing metric result
         """
-        # Get answer text
-        answer_text = response.content if hasattr(response, "content") else str(response)
+        if not self.llm_client:
+            raise ValueError("LLM client required for relevance monitoring")
         
-        # Format the prompt
+        # LLM-based evaluation for monitoring
+        prompt = RELEVANCE_EVALUATION_PROMPT.safe_format(
+            input=request.input.content,
+            model_answer=response.completion
+        )
+        
         try:
-            return prompt.safe_format(
-                input=test_item.input if hasattr(test_item, "input") else "",
-                model_answer=answer_text
-            )
+            llm_response = self.llm_client.generate_text(prompt)
+            from ..core.utils import parse_json
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
         except Exception as e:
-            logger.warning(f"Error formatting relevance prompt: {e}")
-            return str(prompt)
+            logger.error(f"Error in LLM-based relevance evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def calculate_evaluation(self, input_obj: Input, response: Response, reference: Response, llm_client=None) -> dict:
+        """
+        Calculate relevance in evaluation context.
+        
+        Args:
+            input_obj: Input object
+            response: Response object
+            reference: Reference response object
+            llm_client: Optional LLM client for evaluation
+            
+        Returns:
+            Dict containing metric result
+        """
+        # Use provided client or stored client
+        client = llm_client or self.llm_client
+        
+        if not client:
+            raise ValueError("LLM client required for relevance evaluation")
+        
+        # Format prompt for evaluation context
+        prompt = RELEVANCE_EVALUATION_PROMPT.safe_format(
+            input=input_obj.content,
+            model_answer=response.content
+        )
+        
+        try:
+            llm_response = client.generate_text(prompt)
+            from ..core.utils import parse_json
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
+        except Exception as e:
+            logger.error(f"Error in relevance evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
     
 
 class CoherenceMetric(LLMMeasuredBaseMetric):
     """
-    Metric for evaluating the coherence of an answer.
+    Metric for evaluating the coherence of an answer in both monitoring and evaluation contexts.
     
     This metric measures how well-structured and logical the answer is.
     """
     name = "Coherence"
     description = "Measures how coherent, well-structured, and logical the answer is"
     greater_is_better = True
-    context = MetricContext.EVALUATION
+    context = MetricContext.BOTH  # Works in both contexts
     category = MetricCategory.QUALITY
     
-    def __init__(self, llm_client=None, include_raw_response=False):
+    # Model-based requirements
+    monitoring_requires = {
+        "request": LLMRequest,
+        "response": LLMResponse
+    }
+    evaluation_requires = {
+        "input": Input,
+        "response": Response
+    }
+    
+    def __init__(self, mode=None, llm_client=None, include_raw_response=False):
         """
         Initialize the coherence metric.
         
         Args:
+            mode: The context mode for this metric instance
             llm_client: The LLM client
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(prompt=COHERENCE_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response)
+        super().__init__(mode=mode)
+        self.llm_client = llm_client
+        self.include_raw_response = include_raw_response
     
-    def _format_prompt(self, prompt, test_item, response):
+    def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
-        Format the prompt with test item and response data.
+        Calculate coherence in monitoring context.
         
         Args:
-            prompt: The prompt template
-            test_item: The test item
-            response: The response
+            request: LLMRequest object
+            response: LLMResponse object
             
         Returns:
-            str: The formatted prompt
+            Dict containing metric result
         """
-        # Get answer text
-        answer_text = response.content if hasattr(response, "content") else str(response)
+        if not self.llm_client:
+            raise ValueError("LLM client required for coherence monitoring")
         
-        # Format the prompt
+        # LLM-based evaluation for monitoring
+        prompt = COHERENCE_EVALUATION_PROMPT.safe_format(
+            model_answer=response.completion
+        )
+        
         try:
-            return prompt.safe_format(
-                model_answer=answer_text
-            )
+            llm_response = self.llm_client.generate_text(prompt)
+            from ..core.utils import parse_json
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
         except Exception as e:
-            logger.warning(f"Error formatting coherence prompt: {e}")
-            return str(prompt)
+            logger.error(f"Error in LLM-based coherence evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def calculate_evaluation(self, input_obj: Input, response: Response, reference: Response, llm_client=None) -> dict:
+        """
+        Calculate coherence in evaluation context.
+        
+        Args:
+            input_obj: Input object
+            response: Response object
+            reference: Reference response object
+            llm_client: Optional LLM client for evaluation
+            
+        Returns:
+            Dict containing metric result
+        """
+        # Use provided client or stored client
+        client = llm_client or self.llm_client
+        
+        if not client:
+            raise ValueError("LLM client required for coherence evaluation")
+        
+        # Format prompt for evaluation context
+        prompt = COHERENCE_EVALUATION_PROMPT.safe_format(
+            model_answer=response.content
+        )
+        
+        try:
+            llm_response = client.generate_text(prompt)
+            from ..core.utils import parse_json
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
+        except Exception as e:
+            logger.error(f"Error in coherence evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
     
 
 class FluencyMetric(LLMMeasuredBaseMetric):
     """
-    Metric for evaluating the fluency of an answer.
+    Metric for evaluating the fluency of an answer in both monitoring and evaluation contexts.
     
     This metric measures how grammatically correct and natural the answer is.
     """
     name = "Fluency"
     description = "Measures how grammatically correct and natural the answer is"
     greater_is_better = True
-    context = MetricContext.EVALUATION
+    context = MetricContext.BOTH  # Works in both contexts
     category = MetricCategory.QUALITY
     
-    def __init__(self, llm_client=None, include_raw_response=False):
+    # Model-based requirements
+    monitoring_requires = {
+        "request": LLMRequest,
+        "response": LLMResponse
+    }
+    evaluation_requires = {
+        "input": Input,
+        "response": Response
+    }
+    
+    def __init__(self, mode=None, llm_client=None, include_raw_response=False):
         """
         Initialize the fluency metric.
         
         Args:
+            mode: The context mode for this metric instance
             llm_client: The LLM client
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(prompt=FLUENCY_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response)
+        super().__init__(mode=mode)
+        self.llm_client = llm_client
+        self.include_raw_response = include_raw_response
     
-    def _format_prompt(self, prompt, test_item, response):
+    def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
-        Format the prompt with test item and response data.
+        Calculate fluency in monitoring context.
         
         Args:
-            prompt: The prompt template
-            test_item: The test item
-            response: The response
+            request: LLMRequest object
+            response: LLMResponse object
             
         Returns:
-            str: The formatted prompt
+            Dict containing metric result
         """
-        # Get answer text
-        answer_text = response.content if hasattr(response, "content") else str(response)
+        if not self.llm_client:
+            raise ValueError("LLM client required for fluency monitoring")
         
-        # Format the prompt
-        try:
-            return prompt.safe_format(
-                model_answer=answer_text
-            )
-        except Exception as e:
-            logger.warning(f"Error formatting fluency prompt: {e}")
-            return str(prompt)
-    
-    
-    def _get_custom_measurements(self, llm_response, test_item, response, result, llm_custom_measurements=None):
-        """
-        Get custom measurements based on the LLM response.
+        # LLM-based evaluation for monitoring
+        prompt = FLUENCY_EVALUATION_PROMPT.safe_format(
+            model_answer=response.completion
+        )
         
-        Args:
-            llm_response: The raw response from the LLM
-            test_item: The test item
-            response: The response
-            result: The processed result dictionary
-            llm_custom_measurements: Custom measurements provided by the LLM, if any
-            
-        Returns:
-            dict or None: Custom measurements to add to the result
-        """
-        # Extract errors if present in the LLM response
         try:
+            llm_response = self.llm_client.generate_text(prompt)
             from ..core.utils import parse_json
-            json_output = parse_json(llm_response, return_type="object")
-            errors = json_output.get("errors", [])
-            if errors:
-                return {"errors": errors}
-        except Exception:
-            pass
-        return None
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
+        except Exception as e:
+            logger.error(f"Error in LLM-based fluency evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def calculate_evaluation(self, input_obj: Input, response: Response, reference: Response, llm_client=None) -> dict:
+        """
+        Calculate fluency in evaluation context.
+        
+        Args:
+            input_obj: Input object
+            response: Response object
+            reference: Reference response object
+            llm_client: Optional LLM client for evaluation
+            
+        Returns:
+            Dict containing metric result
+        """
+        # Use provided client or stored client
+        client = llm_client or self.llm_client
+        
+        if not client:
+            raise ValueError("LLM client required for fluency evaluation")
+        
+        # Format prompt for evaluation context
+        prompt = FLUENCY_EVALUATION_PROMPT.safe_format(
+            model_answer=response.content
+        )
+        
+        try:
+            llm_response = client.generate_text(prompt)
+            from ..core.utils import parse_json
+            result = parse_json(llm_response, return_type="object")
+            
+            score = float(result.get("score", 0.0))
+            explanation = result.get("explanation", "LLM evaluation")
+            
+            metric_result = {
+                "value": score,
+                "explanation": explanation,
+                "method": "llm_evaluation",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
+            
+            if self.include_raw_response:
+                metric_result["raw_llm_response"] = llm_response
+            
+            return metric_result
+            
+        except Exception as e:
+            logger.error(f"Error in fluency evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat(),
+                "metadata": {}
+            }
+    
     
 class ContextPrecisionMetric(LLMMeasuredBaseMetric):
     """
-    Metric for evaluating the precision of retrieved contexts.
+    Metric for evaluating the precision of retrieved contexts in both monitoring and evaluation contexts.
     
     This metric measures the proportion of relevant chunks in the retrieved contexts.
     It can operate in different modes:
@@ -373,8 +782,18 @@ class ContextPrecisionMetric(LLMMeasuredBaseMetric):
     name = "ContextPrecision"
     description = "Measures the precision of retrieved contexts"
     greater_is_better = True
-    context = MetricContext.EVALUATION
+    context = MetricContext.BOTH  # Works in both contexts
     category = MetricCategory.QUALITY
+    
+    # Model-based requirements
+    monitoring_requires = {
+        "request": LLMRequest,
+        "response": LLMResponse
+    }
+    evaluation_requires = {
+        "input": Input,
+        "response": Response
+    }
     
     def __init__(
         self,

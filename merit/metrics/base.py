@@ -43,28 +43,146 @@ class BaseMetric(ABC):
         greater_is_better: Whether higher values indicate better performance
         context: The context(s) in which this metric is intended to be used
         category: Category for grouping related metrics
-        requires: Dictionary of data requirements for this metric
+        monitoring_requires: Model classes required for monitoring context
+        evaluation_requires: Model classes required for evaluation context
     """
     name = "Base Metric"
     description = "Base class for all metrics"
     greater_is_better = True
     context = MetricContext.BOTH  # Default to usable in both contexts
     category = MetricCategory.CUSTOM
-    requires = {}  # Data requirements for this metric
+    
+    # Model-based requirements for different contexts
+    monitoring_requires = {}  # e.g., {"request": LLMRequest, "response": LLMResponse}
+    evaluation_requires = {}  # e.g., {"input": Input, "response": Response}
+    
+    def __init__(self, mode: MetricContext = None):
+        """
+        Initialize metric with a specific mode.
+        
+        Args:
+            mode: The context mode for this metric instance
+        """
+        if mode is None:
+            self.mode = self.context
+        else:
+            self._validate_mode(mode)
+            self.mode = mode
+    
+    def _validate_mode(self, mode: MetricContext):
+        """Validate that the requested mode is supported by this metric."""
+        if self.context == MetricContext.BOTH:
+            if mode not in [MetricContext.MONITORING, MetricContext.EVALUATION]:
+                raise ValueError(f"Invalid mode {mode} for metric {self.name}")
+        elif self.context != mode:
+            raise ValueError(f"Metric {self.name} does not support mode {mode}")
+    
+    @classmethod
+    def for_monitoring(cls) -> 'BaseMetric':
+        """Create instance for monitoring context."""
+        return cls(mode=MetricContext.MONITORING)
+    
+    @classmethod
+    def for_evaluation(cls) -> 'BaseMetric':
+        """Create instance for evaluation context."""
+        return cls(mode=MetricContext.EVALUATION)
+    
+    def preprocess_monitoring(self, request, response):
+        """
+        Preprocess data for monitoring context calculation.
+        
+        Args:
+            request: LLMRequest object
+            response: LLMResponse object
+            
+        Returns:
+            Tuple of (processed_request, processed_response)
+        """
+        # Default implementation - no preprocessing
+        return request, response
+    
+    def preprocess_evaluation(self, input_obj, response_obj, llm_client=None):
+        """
+        Preprocess data for evaluation context calculation.
+        
+        Args:
+            input_obj: Input object
+            response_obj: Response object
+            llm_client: Optional LLM client for evaluation
+            
+        Returns:
+            Tuple of (processed_input, processed_response, llm_client)
+        """
+        # Default implementation - no preprocessing
+        return input_obj, response_obj, llm_client
     
     @abstractmethod
+    def calculate_monitoring(self, request, response) -> Dict[str, Any]:
+        """
+        Calculate metric in monitoring context.
+        
+        Args:
+            request: LLMRequest object (after preprocessing)
+            response: LLMResponse object (after preprocessing)
+            
+        Returns:
+            Dict containing metric result
+        """
+        raise NotImplementedError
+    
+    @abstractmethod
+    def calculate_evaluation(self, input_obj, response_obj, llm_client=None) -> Dict[str, Any]:
+        """
+        Calculate metric in evaluation context.
+        
+        Args:
+            input_obj: Input object (after preprocessing)
+            response_obj: Response object (after preprocessing)
+            llm_client: Optional LLM client for evaluation
+            
+        Returns:
+            Dict containing metric result
+        """
+        raise NotImplementedError
+    
     def __call__(self, *args, **kwargs) -> Dict[str, Any]:
         """
-        Calculate the metric.
+        Calculate the metric based on the configured mode.
         
-        The signature is deliberately flexible to accommodate different metric types.
-        Each subclass should document its specific parameters.
+        This method handles the complete pipeline:
+        1. Preprocessing the input data
+        2. Calculating the metric
         
         Returns:
             Dict containing at minimum a "value" key with the metric value,
             and optionally additional keys with supporting information.
         """
-        raise NotImplementedError
+        if self.mode == MetricContext.MONITORING:
+            if len(args) < 2:
+                raise ValueError("Monitoring mode requires request and response arguments")
+            
+            # Preprocess data
+            processed_request, processed_response = self.preprocess_monitoring(args[0], args[1])
+            
+            # Calculate metric
+            return self.calculate_monitoring(processed_request, processed_response)
+            
+        elif self.mode == MetricContext.EVALUATION:
+            if len(args) < 2:
+                raise ValueError("Evaluation mode requires input and response arguments")
+            
+            llm_client = args[2] if len(args) > 2 else kwargs.get('llm_client')
+            
+            # Preprocess data
+            processed_input, processed_response, processed_client = self.preprocess_evaluation(
+                args[0], args[1], llm_client
+            )
+            
+            # Calculate metric
+            return self.calculate_evaluation(processed_input, processed_response, processed_client)
+            
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
     
     @classmethod
     def get_requirements(cls) -> Dict[str, Any]:

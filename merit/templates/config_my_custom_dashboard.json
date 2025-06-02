@@ -1,0 +1,30 @@
+{
+  "context": "monitoring",
+  "metrics": [
+    "Request Volume",
+    "Latency",
+    "Cost Estimate"
+  ],
+  "layout": "grid",
+  "refresh_interval": 3000,
+  "theme": "dark",
+  "alerts": true,
+  "widgets": [
+    {
+      "type": "counter",
+      "metric": "Request Volume",
+      "size": {
+        "width": 2,
+        "height": 1
+      }
+    },
+    {
+      "type": "gauge",
+      "metric": "Latency",
+      "size": {
+        "width": 2,
+        "height": 2
+      }
+    }
+  ]
+}

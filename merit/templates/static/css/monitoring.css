@@ -1,0 +1,479 @@
+/* MERIT Monitoring Dashboard Specific Styles */
+
+/* Real-time indicators */
+.real-time-indicator {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--success-color);
+    animation: pulse 2s infinite;
+}
+
+.real-time-indicator.disconnected {
+    background-color: var(--danger-color);
+    animation: none;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Alert indicators */
+.alert-indicator {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background-color: var(--danger-color);
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    animation: alertPulse 1s infinite;
+}
+
+@keyframes alertPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+/* Gauge widget styles */
+.gauge-container {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto;
+}
+
+.gauge-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--text-color);
+}
+
+.gauge-label {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+/* Time series specific styles */
+.time-series-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.time-range-selector {
+    display: flex;
+    gap: 5px;
+}
+
+.time-range-btn {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    background: var(--card-bg-color);
+    color: var(--text-color);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: var(--transition);
+}
+
+.time-range-btn:hover {
+    background: var(--hover-color);
+}
+
+.time-range-btn.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+/* Counter animations */
+.counter-value {
+    transition: all 0.3s ease;
+}
+
+.counter-value.updating {
+    transform: scale(1.1);
+    color: var(--info-color);
+}
+
+/* Currency formatting */
+.currency-value::before {
+    content: "$";
+    font-size: 0.8em;
+    vertical-align: top;
+}
+
+.currency-change {
+    font-size: 0.75rem;
+    margin-top: 4px;
+}
+
+.currency-change.positive::before {
+    content: "↗ ";
+    color: var(--success-color);
+}
+
+.currency-change.negative::before {
+    content: "↘ ";
+    color: var(--danger-color);
+}
+
+/* RAG-specific monitoring styles */
+.rag-section {
+    margin-bottom: 30px;
+}
+
+.rag-section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.document-relevance-heatmap {
+    grid-column: span 6;
+    grid-row: span 3;
+}
+
+.context-precision-chart {
+    grid-column: span 3;
+    grid-row: span 2;
+}
+
+.faithfulness-correlation {
+    grid-column: span 3;
+    grid-row: span 2;
+}
+
+/* Metric threshold indicators */
+.threshold-indicator {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.threshold-normal {
+    background-color: var(--success-color);
+}
+
+.threshold-warning {
+    background-color: var(--warning-color);
+}
+
+.threshold-critical {
+    background-color: var(--danger-color);
+}
+
+/* Live data stream indicator */
+.data-stream-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.stream-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--success-color);
+    animation: streamPulse 1.5s infinite;
+}
+
+.stream-dot.paused {
+    background-color: var(--warning-color);
+    animation: none;
+}
+
+.stream-dot.error {
+    background-color: var(--danger-color);
+    animation: none;
+}
+
+@keyframes streamPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* Metric comparison widgets */
+.comparison-widget {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: var(--card-bg-color);
+    border-radius: var(--border-radius);
+    margin-bottom: 8px;
+    border-left: 4px solid var(--primary-color);
+}
+
+.comparison-metric {
+    flex: 1;
+}
+
+.comparison-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.comparison-value {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: var(--text-color);
+}
+
+.comparison-vs {
+    margin: 0 15px;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+/* Alert panel */
+.alert-panel {
+    background: var(--card-bg-color);
+    border-radius: var(--border-radius);
+    padding: 16px;
+    margin-bottom: 20px;
+    border-left: 4px solid var(--danger-color);
+}
+
+.alert-panel.warning {
+    border-left-color: var(--warning-color);
+}
+
+.alert-panel.info {
+    border-left-color: var(--info-color);
+}
+
+.alert-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-color);
+}
+
+.alert-message {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.alert-timestamp {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Performance metrics specific styles */
+.performance-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.performance-metric {
+    background: var(--card-bg-color);
+    padding: 16px;
+    border-radius: var(--border-radius);
+    text-align: center;
+    box-shadow: var(--box-shadow);
+}
+
+.performance-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--primary-color);
+    margin-bottom: 8px;
+}
+
+.performance-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.performance-trend {
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.trend-up {
+    color: var(--success-color);
+}
+
+.trend-down {
+    color: var(--danger-color);
+}
+
+.trend-stable {
+    color: var(--text-muted);
+}
+
+/* Connection status */
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--card-bg-color);
+    border-radius: var(--border-radius);
+    font-size: 0.875rem;
+}
+
+.connection-status.connected {
+    color: var(--success-color);
+}
+
+.connection-status.disconnected {
+    color: var(--danger-color);
+}
+
+.connection-status.reconnecting {
+    color: var(--warning-color);
+}
+
+/* Widget resize handles */
+.widget-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: se-resize;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.widget:hover .widget-resize-handle {
+    opacity: 0.5;
+}
+
+.widget-resize-handle::after {
+    content: "";
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-bottom: 8px solid var(--text-muted);
+}
+
+/* Fullscreen widget */
+.widget-fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+    background: var(--card-bg-color);
+    padding: 20px;
+}
+
+.widget-fullscreen .widget-header {
+    margin-bottom: 20px;
+}
+
+.widget-fullscreen .chart-container {
+    height: calc(100vh - 120px);
+}
+
+/* Responsive monitoring adjustments */
+@media (max-width: 768px) {
+    .performance-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .comparison-widget {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .comparison-vs {
+        margin: 8px 0;
+    }
+    
+    .time-series-controls {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .document-relevance-heatmap,
+    .context-precision-chart,
+    .faithfulness-correlation {
+        grid-column: span 4;
+        grid-row: span 2;
+    }
+}
+
+@media (max-width: 480px) {
+    .performance-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .alert-panel {
+        padding: 12px;
+    }
+    
+    .gauge-container {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .gauge-value {
+        font-size: 1.25rem;
+    }
+}
+
+/* Print styles for monitoring reports */
+@media print {
+    .real-time-indicator,
+    .alert-indicator,
+    .widget-actions,
+    .dashboard-controls {
+        display: none;
+    }
+    
+    .widget {
+        break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #ccc;
+    }
+    
+    .dashboard-grid {
+        display: block;
+    }
+    
+    .widget {
+        margin-bottom: 20px;
+        page-break-inside: avoid;
+    }
+}
