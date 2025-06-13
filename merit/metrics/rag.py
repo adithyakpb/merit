@@ -20,7 +20,6 @@ from ..core.logging import get_logger
 logger = get_logger(__name__)
 
 from .llm_measured import LLMMeasuredBaseMetric
-from .base import BaseMetric
 from ..core.models import Input, Response
 from ..core.prompts import Prompt
 from ..monitoring.models import LLMRequest, LLMResponse
@@ -53,10 +52,8 @@ class CorrectnessMetric(LLMMeasuredBaseMetric):
             agent_description: Description of the agent
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(mode=mode)
-        self.llm_client = llm_client
+        super().__init__(prompt=CORRECTNESS_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response, mode=mode)
         self.agent_description = agent_description or "This agent is a chatbot that answers input from users."
-        self.include_raw_response = include_raw_response
     
     def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
@@ -235,9 +232,7 @@ class FaithfulnessMetric(LLMMeasuredBaseMetric):
             llm_client: The LLM client
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(mode=mode)
-        self.llm_client = llm_client
-        self.include_raw_response = include_raw_response
+        super().__init__(prompt=FAITHFULNESS_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response, mode=mode)
     
     def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
@@ -379,9 +374,7 @@ class RelevanceMetric(LLMMeasuredBaseMetric):
             llm_client: The LLM client
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(mode=mode)
-        self.llm_client = llm_client
-        self.include_raw_response = include_raw_response
+        super().__init__(prompt=RELEVANCE_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response, mode=mode)
     
     def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
@@ -520,9 +513,7 @@ class CoherenceMetric(LLMMeasuredBaseMetric):
             llm_client: The LLM client
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(mode=mode)
-        self.llm_client = llm_client
-        self.include_raw_response = include_raw_response
+        super().__init__(prompt=COHERENCE_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response, mode=mode)
     
     def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
@@ -659,9 +650,7 @@ class FluencyMetric(LLMMeasuredBaseMetric):
             llm_client: The LLM client
             include_raw_response: Whether to include the raw LLM response in the output
         """
-        super().__init__(mode=mode)
-        self.llm_client = llm_client
-        self.include_raw_response = include_raw_response
+        super().__init__(prompt=FLUENCY_EVALUATION_PROMPT, llm_client=llm_client, include_raw_response=include_raw_response, mode=mode)
     
     def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
         """
