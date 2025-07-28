@@ -710,7 +710,7 @@ class MongoDBStorage(BaseStorage):
     
     # Helper Methods
     
-    def _get_collection(self, collection_name: Optional[str] = None) -> Collection:
+    def _get_collection(self, collection_name: Optional[str] = None) -> "Collection":
         """Get collection reference."""
         if collection_name:
             return self.database[collection_name]

@@ -8,7 +8,8 @@ from abc import ABCMeta
 from datetime import datetime
 from .base import BaseMetric, MetricContext, MetricCategory
 from ..core.logging import get_logger
-from ..core.models import TestItem  
+from ..core.models import TestItem, Input, Response
+from ..monitoring.models import LLMRequest, LLMResponse
 from ..core.prompts import Prompt
 from ..api.client import AIAPIClient
 
@@ -77,7 +78,7 @@ class LLMMeasuredBaseMetric(BaseMetric, metaclass=ABCMeta):
     
     # No separate score_field property needed - we'll use the name property directly
     
-    def __init__(self, prompt: "Prompt" = None, llm_client: AIAPIClient = None, include_raw_response: bool = False):
+    def __init__(self, prompt: "Prompt" = None, llm_client: AIAPIClient = None, include_raw_response: bool = False, mode: MetricContext = None):
         """
         Initialize the LLM-measured metric.
         
@@ -85,7 +86,9 @@ class LLMMeasuredBaseMetric(BaseMetric, metaclass=ABCMeta):
             prompt: The prompt to use for the evaluation
             llm_client: The LLM client to use for generating text
             include_raw_response: Whether to include the raw LLM response in the output
+            mode: The context mode for this metric instance
         """
+        super().__init__(mode=mode)
         self.prompt = prompt
         self._llm_client = llm_client
         self._include_raw_response = include_raw_response
@@ -158,6 +161,146 @@ class LLMMeasuredBaseMetric(BaseMetric, metaclass=ABCMeta):
             result.pop("raw_llm_response", None)
             
         return result
+    
+    def calculate_monitoring(self, request: LLMRequest, response: LLMResponse) -> dict:
+        """
+        Calculate the metric in monitoring context using LLM.
+        
+        Args:
+            request: LLMRequest object
+            response: LLMResponse object
+            
+        Returns:
+            Dict containing metric result
+        """
+        if not self._llm_client:
+            raise ValueError(f"LLM client required for {self.name} monitoring")
+        
+        # Format prompt for monitoring context
+        formatted_prompt = self._format_prompt_monitoring(request, response)
+        
+        # Call LLM and parse response
+        return self._call_llm_and_parse(formatted_prompt)
+    
+    def calculate_evaluation(self, input_obj: Input, response: Response, reference: Response, llm_client=None) -> dict:
+        """
+        Calculate the metric in evaluation context using LLM.
+        
+        Args:
+            input_obj: Input object
+            response: Response object
+            reference: Reference response object
+            llm_client: Optional LLM client for evaluation
+            
+        Returns:
+            Dict containing metric result
+        """
+        # Use provided client or stored client
+        client = llm_client or self._llm_client
+        
+        if not client:
+            raise ValueError(f"LLM client required for {self.name} evaluation")
+        
+        # Format prompt for evaluation context
+        formatted_prompt = self._format_prompt_evaluation(input_obj, response, reference)
+        
+        # Call LLM and parse response
+        return self._call_llm_and_parse(formatted_prompt, llm_client_override=client)
+    
+    def _format_prompt_monitoring(self, request: LLMRequest, response: LLMResponse) -> str:
+        """
+        Format the prompt for monitoring context.
+        
+        Override this method in subclasses to customize prompt formatting for monitoring.
+        
+        Args:
+            request: LLMRequest object
+            response: LLMResponse object
+            
+        Returns:
+            str: The formatted prompt
+        """
+        if not self.prompt:
+            raise ValueError("No prompt template provided")
+        
+        # Default implementation - subclasses should override
+        try:
+            return self.prompt.safe_format(
+                input=request.input.content,
+                model_answer=response.completion,
+                response=response.completion  # For backward compatibility
+            )
+        except Exception as e:
+            logger.warning(f"Error formatting monitoring prompt: {e}")
+            return str(self.prompt)
+    
+    def _format_prompt_evaluation(self, input_obj: Input, response: Response, reference: Response) -> str:
+        """
+        Format the prompt for evaluation context.
+        
+        Override this method in subclasses to customize prompt formatting for evaluation.
+        
+        Args:
+            input_obj: Input object
+            response: Response object
+            reference: Reference response object
+            
+        Returns:
+            str: The formatted prompt
+        """
+        if not self.prompt:
+            raise ValueError("No prompt template provided")
+        
+        # Default implementation - subclasses should override
+        try:
+            return self.prompt.safe_format(
+                input=input_obj.content,
+                model_answer=response.content,
+                response=response.content,  # For backward compatibility
+                reference_answer=reference.content if reference else ""
+            )
+        except Exception as e:
+            logger.warning(f"Error formatting evaluation prompt: {e}")
+            return str(self.prompt)
+    
+    def _call_llm_and_parse(self, formatted_prompt: str, llm_client_override=None) -> dict:
+        """
+        Call the LLM with the formatted prompt and parse the response.
+        
+        Args:
+            formatted_prompt: The formatted prompt string
+            llm_client_override: Optional LLM client to use instead of stored client
+            
+        Returns:
+            Dict containing metric result
+        """
+        client_to_use = llm_client_override or self._llm_client
+        
+        try:
+            # Call the LLM
+            llm_response = client_to_use.generate_text(formatted_prompt)
+            
+            # Process the LLM response
+            result = self._process_llm_response(llm_response)
+            
+            # Add standard metadata
+            result["method"] = "llm_evaluation"
+            result["timestamp"] = datetime.now().isoformat()
+            
+            # Include raw response if requested
+            if self._include_raw_response:
+                result["raw_llm_response"] = llm_response
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in LLM-based {self.name} evaluation: {e}")
+            return {
+                "value": 0.0,
+                "explanation": f"Error in evaluation: {str(e)}",
+                "method": "error",
+                "timestamp": datetime.now().isoformat()
+            }
     
     def _format_prompt(self, prompt, test_item, response):
         """

@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import patch
 
 from merit.api.run_config import with_retry, adaptive_throttle, with_adaptive_retry
-from merit.api.errors import APIRateLimitError, APIConnectionError
+from merit.api.errors import MeritAPIRateLimitError, MeritAPIConnectionError
 from merit.core.errors import MeritBaseError, ValidationError
 
 
@@ -44,7 +44,7 @@ class MockAPIService:
         
         # Check if we should simulate a connection failure
         if self.connection_calls <= self.fail_modes.get('connection_fails', 0):
-            raise APIConnectionError(
+            raise MeritAPIConnectionError(
                 "Could not connect to API service"
             )
         
@@ -59,7 +59,7 @@ class MockAPIService:
         if self.rate_limit_calls <= self.fail_modes.get('rate_limit_fails', 0):
             retry_after = 1  # short for testing
             # Fix the string concatenation issue in the original message
-            raise APIRateLimitError(
+            raise MeritAPIRateLimitError(
                 "Rate limit exceeded", 
                 retry_after=retry_after
             )
@@ -105,26 +105,32 @@ class TestIntegrationScenarios:
     
     def test_adaptive_throttle_rate_limit(self, mock_service):
         """Test that adaptive throttling handles rate limits."""
-        # Configure service to fail with rate limit error
-        service = MockAPIService(fail_modes={'rate_limit_fails': 1})
-        
+        # Configure service to fail with rate limit error twice
+        service = MockAPIService(fail_modes={'rate_limit_fails': 2})
+
         # Helper function that doesn't get confused with method binding
         def test_fn(*args, **kwargs):
             # Ignore any passed-in self
             return service.rate_limited_operation()
-            
+
         # Apply adaptive throttle decorator
         test_method = adaptive_throttle(test_fn)
-        
-        # First call should fail with rate limit error
-        with patch('time.sleep'):  # Mock sleep to speed up tests
-            with pytest.raises(APIRateLimitError):
+
+        # It should fail the first time, then succeed
+        with patch('time.sleep') as mock_sleep:
+            # First call should fail with rate limit
+            with pytest.raises(MeritAPIRateLimitError):
                 test_method()
-        
-        # Second call should succeed with increased delay
-        with patch('time.sleep'):
+
+            # Second call should also fail
+            with pytest.raises(MeritAPIRateLimitError):
+                test_method()
+
+            # Third call should succeed
             result = test_method()
             assert result == "Operation completed successfully"
+            assert service.rate_limit_calls == 3
+            assert mock_sleep.call_count == 2
     
     def test_combined_adaptive_retry(self, mock_service):
         """Test the combined adaptive retry decorator."""

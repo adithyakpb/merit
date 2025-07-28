@@ -58,11 +58,11 @@ class Input:
     def from_dict(cls, data: Dict[str, Any]) -> 'Input':
         """Create from dictionary."""
         if isinstance(data, str):
-            return cls(content=data)
+            return cls(user_input=data) # Changed content to user_input
         
         return cls(
             id=data.get("id"),
-            content=data.get("content", ""),
+            user_input=data.get("content", ""), # Changed content to user_input
             metadata=data.get("metadata", {}),
         )
 
@@ -81,6 +81,7 @@ class Response:
     content: str
     documents: Optional[List[Any]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    error: Optional[str] = None # Added error field
     id: str = None
     
     def __post_init__(self):
@@ -120,6 +121,7 @@ class Response:
             "content": self.content,
             "documents": serializable_documents,
             "metadata": self.metadata,
+            "error": self.error, # Added error to to_dict
         }
     
     @classmethod
@@ -133,6 +135,7 @@ class Response:
             content=data.get("content", ""),
             documents=data.get("documents"),
             metadata=data.get("metadata", {}),
+            error=data.get("error"), # Added error to from_dict
         )
 
 @dataclass
@@ -188,8 +191,8 @@ class TestItem:
         
         # Convert string input to Input object
         if isinstance(self.input, str):
-            self.input = Input(content=self.input)
-        
+            self.input = Input(user_input=self.input) # Changed content to user_input
+    
         # Convert string reference_answer to Response object
         if isinstance(self.reference_answer, str):
             self.reference_answer = Response(content=self.reference_answer)

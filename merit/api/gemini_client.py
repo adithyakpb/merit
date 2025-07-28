@@ -6,14 +6,14 @@ the AIAPIClient interface with full MERIT system integration.
 """
 
 import os
-from typing import List, Dict, Any, Optional, Union
-from dotenv import load_dotenv
+from typing import List, Dict, Optional, Union
 
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+except ImportError:
+    pass
 
-from .client import AIAPIClient, AIAPIClientConfig
-from .base import validate_embeddings_response, validate_text_response
+from .base import BaseAPIClient, BaseAPIClientConfig, EmbeddingResponse, TextGenerationResponse
 from ..core.logging import get_logger
 from ..core.cache import cache_embeddings
 from .errors import (
@@ -29,7 +29,7 @@ from .errors import (
 logger = get_logger(__name__)
 
 
-class GeminiClientConfig(AIAPIClientConfig):
+class GeminiClientConfig(BaseAPIClientConfig):
     """
     Configuration class for Gemini API clients.
     
@@ -64,6 +64,7 @@ class GeminiClientConfig(AIAPIClientConfig):
             top_k: Top-k value for text generation.
             **kwargs: Additional configuration parameters.
         """
+        #NOTE is this needed?
         if base_url is None:
             base_url = "https://generativelanguage.googleapis.com/v1beta"
             
@@ -87,7 +88,17 @@ class GeminiClientConfig(AIAPIClientConfig):
         return super().get_supported_env_vars() + ["GOOGLE_API_KEY", "GEMINI_API_KEY"]
 
 
-class GeminiClient(AIAPIClient):
+class GeminiClient(BaseAPIClient):
+    def _lazy_import_genai(self):
+        try:
+            from google import genai
+            from google.genai import types
+            return genai, types
+        except ImportError as e:
+            raise ImportError(
+                "Google's Generative AI SDK is not installed. Please install it with `pip install merit[google]`"
+            ) from e
+
     """
     A client for the Google Gemini API.
     
@@ -96,104 +107,35 @@ class GeminiClient(AIAPIClient):
     with full MERIT system integration.
     """
     
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        generation_model: str = "gemini-2.0-flash-exp",
-        embedding_model: str = "text-embedding-004",
-        max_output_tokens: int = 1024,
-        temperature: float = 0.1,
-        top_p: float = 0.95,
-        top_k: int = 40,
-        base_url: str = "https://generativelanguage.googleapis.com/v1beta",
-        config: Optional[Union[GeminiClientConfig, Dict[str, Any]]] = None,
-        env_file: Optional[str] = None,
-        required_vars: Optional[List[str]] = None,
-        **kwargs
-    ):
+    def __init__(self, config: GeminiClientConfig):
         """
         Initialize the Gemini client.
         
         Args:
-            api_key: The API key for the Gemini API. If not provided, will look for GOOGLE_API_KEY or GEMINI_API_KEY environment variable.
-            generation_model: The model to use for text generation.
-            embedding_model: The model to use for embeddings.
-            max_output_tokens: The maximum number of tokens to generate.
-            temperature: The temperature for text generation.
-            top_p: The top-p value for text generation.
-            top_k: The top-k value for text generation.
-            base_url: Base URL for the Gemini API.
-            config: Configuration object or dictionary.
-            env_file: Path to .env file containing environment variables.
-            required_vars: List of environment variable names that are required when loading from environment.
-            **kwargs: Additional parameters.
+            config: The Gemini client configuration.
         """
-        # Check for Gemini-specific environment variables first
-        if env_file is not None or api_key is None:
-            gemini_api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-            if gemini_api_key:
-                api_key = gemini_api_key
-        
-        # Ensure we have an API key
-        if not api_key:
+        super().__init__(config)
+        self.config: GeminiClientConfig = config
+
+        # Lazy import genai and configure it
+        genai, _ = self._lazy_import_genai()
+
+        if not self.config.api_key:
+            self.config.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+        if not self.config.api_key:
             raise MeritAPIAuthenticationError(
-                "API key is required for Gemini client",
-                details={
-                    "required_env_vars": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
-                    "help": "Provide api_key parameter or set GOOGLE_API_KEY/GEMINI_API_KEY environment variable"
-                }
+                "Gemini API key not found. "
+                "Set it in your config or as GOOGLE_API_KEY/GEMINI_API_KEY environment variable."
             )
-        
-        # Initialize the parent class with proper inheritance
-        super().__init__(
-            api_key=api_key,
-            base_url=base_url,
-            model=generation_model,
-            env_file=env_file,
-            config=config,
-            required_vars=required_vars,
-            **kwargs
-        )
-        
-        # Set Gemini-specific attributes
-        self.generation_model = generation_model
-        self.embedding_model = embedding_model
-        self.max_output_tokens = max_output_tokens
-        self.temperature = temperature
-        self.top_p = top_p
-        self.top_k = top_k
-        
-        # Override from config if provided
-        if config is not None:
-            if isinstance(config, GeminiClientConfig):
-                if config.generation_model is not None:
-                    self.generation_model = config.generation_model
-                if config.embedding_model is not None:
-                    self.embedding_model = config.embedding_model
-                if config.max_output_tokens is not None:
-                    self.max_output_tokens = config.max_output_tokens
-                if config.temperature is not None:
-                    self.temperature = config.temperature
-                if config.top_p is not None:
-                    self.top_p = config.top_p
-                if config.top_k is not None:
-                    self.top_k = config.top_k
-            elif isinstance(config, dict):
-                self.generation_model = config.get('generation_model', self.generation_model)
-                self.embedding_model = config.get('embedding_model', self.embedding_model)
-                self.max_output_tokens = config.get('max_output_tokens', self.max_output_tokens)
-                self.temperature = config.get('temperature', self.temperature)
-                self.top_p = config.get('top_p', self.top_p)
-                self.top_k = config.get('top_k', self.top_k)
-        
+
         # Initialize the Gemini client
         try:
-            self.client = genai.Client(api_key=self.api_key)
-            logger.info(f"Initialized GeminiClient with generation_model={self.generation_model}, embedding_model={self.embedding_model}")
+            genai.configure(api_key=self.config.api_key)
+            self.client = genai.GenerativeModel(self.config.generation_model)
+            logger.info(f"GeminiClient initialized for model: {self.config.generation_model}")
         except Exception as e:
-            merit_error = self._convert_gemini_error(e, "client_initialization")
-            logger.error(f"Failed to initialize Gemini client: {merit_error}")
-            raise merit_error
+            raise MeritAPIConnectionError(f"Failed to configure Gemini client: {e}") from e
     
     def _convert_gemini_error(self, error: Exception, endpoint: str = "") -> Exception:
         """
@@ -263,6 +205,27 @@ class GeminiClient(AIAPIClient):
             "Gemini API error occurred",
             details=details
         )
+
+    def _handle_api_error(self, error: Exception, strict: Optional[bool] = None) -> None:
+        """
+        Central error handling with strict mode support.
+        
+        Args:
+            error: The exception that occurred.
+            strict: Override for strict mode. If None, uses client's strict setting.
+            
+        Returns:
+            None in graceful mode, raises exception in strict mode.
+            
+        Raises:
+            Exception: The original error in strict mode.
+        """
+        use_strict = strict if strict is not None else self.config.strict
+        if use_strict:
+            logger.error(f"API call failed in strict mode: {error}")
+            raise error
+        else:
+            logger.warning(f"API call failed in graceful mode: {error}")
     
     def _get_headers(self) -> Dict[str, str]:
         """
@@ -273,7 +236,7 @@ class GeminiClient(AIAPIClient):
         """
         return {
             "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key
+            "x-goog-api-key": self.config.api_key
         }
     
     @property
@@ -284,80 +247,60 @@ class GeminiClient(AIAPIClient):
         Returns:
             bool: True if the client has a valid API key, False otherwise.
         """
-        return self.api_key is not None
+        #TODO logic to validate the api key
+        return self.config.api_key is not None
     
-    def login(self) -> bool:
-        """
-        Gemini uses API key authentication, so login is not applicable.
-        
-        Returns:
-            bool: True if API key is present, False otherwise.
-        """
-        return self.is_authenticated
-    
-    def get_token(self) -> Optional[str]:
+    def _get_token(self) -> Optional[str]:
         """
         Get the API key (token equivalent for Gemini).
         
         Returns:
             Optional[str]: The API key, or None if not set.
         """
-        return self.api_key
+        return self.config.api_key
     
-    @validate_text_response
-    def generate_text(
-        self,
-        prompt: str,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        system_prompt: Optional[str] = None,
-        **kwargs
-    ) -> str:
+    def generate_text(self, prompt: str, **kwargs) -> TextGenerationResponse:
         """
         Generate text based on a prompt.
         
         Args:
             prompt: The prompt to generate text from.
-            max_tokens: The maximum number of tokens to generate.
-            temperature: The temperature for text generation.
-            system_prompt: A system prompt to use.
-            **kwargs: Additional arguments.
+            **kwargs: Additional arguments including 'max_tokens', 'temperature', 'system_prompt'.
             
         Returns:
-            str: The generated text.
+            TextGenerationResponse: The standardized response object.
         """
+        genai, _ = self._lazy_import_genai()
         try:
-            # Set up the generation config
-            config = types.GenerateContentConfig(
-                max_output_tokens=max_tokens or self.max_output_tokens,
-                temperature=temperature or self.temperature,
-                top_p=self.top_p,
-                top_k=self.top_k,
+            max_tokens = kwargs.get('max_tokens', self.config.max_output_tokens)
+            temperature = kwargs.get('temperature', self.config.temperature)
+            
+            generation_config = genai.types.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=temperature,
+                top_p=self.config.top_p,
+                top_k=self.config.top_k,
             )
+
+            logger.info(f"Generating text with model {self.config.generation_model}")
             
-            # Add system prompt if provided
-            if system_prompt:
-                config.system_instruction = system_prompt
-            
-            logger.info(f"Generating text with model {self.generation_model}")
-            
-            # Generate the content
             response = self.client.models.generate_content(
-                model=self.generation_model,
                 contents=prompt,
-                config=config
+                generation_config=generation_config
             )
             
-            # Return the generated text
-            return response.text
+            return TextGenerationResponse(
+                text=response.text,
+                provider_metadata=response.to_dict()
+            )
             
         except Exception as e:
             merit_error = self._convert_gemini_error(e, "generate_content")
-            return self._handle_api_error(merit_error) or ""
-    
+            self._handle_api_error(merit_error)
+            return TextGenerationResponse(text="", provider_metadata={"error": str(merit_error)})
+
     @cache_embeddings
-    @validate_embeddings_response
-    def get_embeddings(self, texts: Union[str, List[str]]) -> List[List[float]]:
+    def get_embeddings(self, texts: Union[str, List[str]], **kwargs) -> EmbeddingResponse:
         """
         Get embeddings for the given texts.
         
@@ -365,78 +308,104 @@ class GeminiClient(AIAPIClient):
             texts: A string or list of strings to get embeddings for.
             
         Returns:
-            List[List[float]]: A list of embeddings, where each embedding is a list of floats.
-            For a single input text, still returns a list containing one embedding.
+            EmbeddingResponse: The standardized response object.
         """
-        # Ensure texts is a list
+        genai, _ = self._lazy_import_genai()
         if isinstance(texts, str):
             texts = [texts]
         
-        embeddings = []
-        
         try:
-            logger.info(f"Getting embeddings for {len(texts)} texts using model {self.embedding_model}")
+            logger.info(f"Getting embeddings for {len(texts)} texts using model {self.config.embedding_model}")
             
-            for text in texts:
-                result = self.client.models.embed_content(
-                    model=self.embedding_model,
-                    contents=text
-                )
-                
-                # Convert ContentEmbedding to a list of floats
-                if hasattr(result.embeddings, 'values'):
-                    # If it's a ContentEmbedding object with a 'values' attribute
-                    if hasattr(result.embeddings.values, 'tolist'):
-                        embedding_values = result.embeddings.values.tolist()
-                    else:
-                        embedding_values = list(result.embeddings.values)
-                elif isinstance(result.embeddings, list) and len(result.embeddings) == 1:
-                    # If it's a list containing a single embedding
-                    if hasattr(result.embeddings[0], 'values'):
-                        # If the embedding has a 'values' attribute
-                        if hasattr(result.embeddings[0].values, 'tolist'):
-                            embedding_values = result.embeddings[0].values.tolist()
-                        else:
-                            embedding_values = list(result.embeddings[0].values)
-                    else:
-                        # If the embedding is already a list
-                        embedding_values = result.embeddings[0]
-                else:
-                    # Fallback to using the embeddings as is
-                    if hasattr(result.embeddings, 'tolist'):
-                        embedding_values = result.embeddings.tolist()
-                    else:
-                        embedding_values = list(result.embeddings)
-                
-                embeddings.append(embedding_values)
+            result = genai.embed_content(
+                model=self.config.embedding_model,
+                content=texts,
+                task_type="RETRIEVAL_DOCUMENT"
+            )
             
-            return embeddings
+            return EmbeddingResponse(
+                embeddings=result['embedding'],
+                provider_metadata=result
+            )
             
         except Exception as e:
             merit_error = self._convert_gemini_error(e, "embed_content")
-            return self._handle_api_error(merit_error) or [[] for _ in texts]
-    
-    def create_chat_session(self, model: Optional[str] = None) -> Any:
+            self._handle_api_error(merit_error)
+            return EmbeddingResponse(embeddings=[[] for _ in texts], provider_metadata={"error": str(merit_error)})
+
+    async def generate_text_async(self, prompt: str, **kwargs) -> TextGenerationResponse:
         """
-        Create a chat session for multi-turn conversations.
+        Asynchronously generate text based on a prompt.
         
         Args:
-            model: Model to use for the chat session. If None, uses the default generation model.
+            prompt: The prompt to generate text from.
+            **kwargs: Additional arguments including 'max_tokens', 'temperature', 'system_prompt'.
             
         Returns:
-            Chat session object.
+            TextGenerationResponse: The standardized response object.
         """
+        genai, _ = self._lazy_import_genai()
         try:
-            chat_model = model or self.generation_model
-            logger.info(f"Creating chat session with model {chat_model}")
+            max_tokens = kwargs.get('max_tokens', self.config.max_output_tokens)
+            temperature = kwargs.get('temperature', self.config.temperature)
             
-            chat = self.client.chats.create(model=chat_model)
-            return chat
+            generation_config = genai.types.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=temperature,
+                top_p=self.config.top_p,
+                top_k=self.config.top_k,
+            )
+
+            logger.info(f"Asynchronously generating text with model {self.config.generation_model}")
+            
+            response = await self.client.generate_content_async(
+                contents=prompt,
+                generation_config=generation_config
+            )
+            
+            return TextGenerationResponse(
+                text=response.text,
+                provider_metadata=response.to_dict()
+            )
             
         except Exception as e:
-            merit_error = self._convert_gemini_error(e, "create_chat")
-            logger.error(f"Failed to create chat session: {merit_error}")
-            return None
+            merit_error = self._convert_gemini_error(e, "generate_content")
+            self._handle_api_error(merit_error)
+            return TextGenerationResponse(text="", provider_metadata={"error": str(merit_error)})
+
+    async def get_embeddings_async(self, texts: Union[str, List[str]], **kwargs) -> EmbeddingResponse:
+        """
+        Asynchronously get embeddings for the given texts.
+        
+        Args:
+            texts: A string or list of strings to get embeddings for.
+            
+        Returns:
+            EmbeddingResponse: The standardized response object.
+        """
+        genai, _ = self._lazy_import_genai()
+        if isinstance(texts, str):
+            texts = [texts]
+        
+        try:
+            logger.info(f"Asynchronously getting embeddings for {len(texts)} texts using model {self.config.embedding_model}")
+            
+            result = await genai.embed_content_async(
+                model=self.config.embedding_model,
+                content=texts,
+                task_type="RETRIEVAL_DOCUMENT"
+            )
+            
+            return EmbeddingResponse(
+                embeddings=result['embedding'],
+                provider_metadata=result
+            )
+            
+        except Exception as e:
+            merit_error = self._convert_gemini_error(e, "embed_content")
+            self._handle_api_error(merit_error)
+            return EmbeddingResponse(embeddings=[[] for _ in texts], provider_metadata={"error": str(merit_error)})
+    
     
     def list_models(self) -> List[str]:
         """
@@ -445,12 +414,14 @@ class GeminiClient(AIAPIClient):
         Returns:
             List[str]: List of model names.
         """
+        genai, _ = self._lazy_import_genai()
         try:
             logger.info("Listing available models")
             
             models = []
-            for model in self.client.models.list():
-                models.append(model.name)
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    models.append(m.name)
             
             return models
             
@@ -471,13 +442,10 @@ class GeminiClient(AIAPIClient):
             int: Number of tokens.
         """
         try:
-            count_model = model or self.generation_model
+            count_model = model or self.config.generation_model
             logger.info(f"Counting tokens with model {count_model}")
             
-            response = self.client.models.count_tokens(
-                model=count_model,
-                contents=text
-            )
+            response = self.client.count_tokens(contents=text)
             
             return response.total_tokens
             

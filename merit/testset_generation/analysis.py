@@ -7,7 +7,7 @@ patterns, styles, and other characteristics.
 
 import os
 import concurrent.futures
-import numpy as np
+
 from typing import Any, Dict, List, Tuple, Union
 from ..api.client import AIAPIClient
 from ..core.cache import cache_analysis
@@ -425,8 +425,9 @@ def analyze_examples(
 
 
 def _create_sub_clusters(
-    features: np.ndarray, clustering_results: Dict[str, Any]
-) -> Dict[int, Dict[int, np.ndarray]]:
+    features, clustering_results: Dict[str, Any]
+) -> Dict[int, Dict[int, Any]]:
+    import numpy as np
     """
     Create sub-clusters within each main cluster.
 
@@ -437,7 +438,7 @@ def _create_sub_clusters(
     Returns:
         Dict[int, Dict[int, np.ndarray]]: Mapping of main cluster IDs to sub-clusters
     """
-    import numpy as np
+
 
     cluster_labels = clustering_results["labels"]
     sub_clusters = {}
@@ -509,7 +510,7 @@ def select_representative_examples(
     Returns:
         List[str]: Selected representative examples
     """
-    import numpy as np
+
 
     # Process inputs if it's an ExampleSet
     if hasattr(inputs, "examples") and hasattr(inputs, "to_dict"):
@@ -1086,6 +1087,7 @@ def remove_similar_inputs(
     client: Any,
     similarity_threshold: float = 0.85,
 ) -> List[str]:
+    import numpy as np
     """
     Remove similar inputs from a list of inputs.
 
@@ -1167,6 +1169,7 @@ def check_document_relevance(
     input: str,
     client: Any,
 ) -> bool:
+    import numpy as np
     """
     Check if a document is relevant to an input.
 

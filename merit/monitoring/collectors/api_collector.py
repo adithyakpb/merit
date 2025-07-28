@@ -678,7 +678,9 @@ class OpenAIProxyCollector(APIProxyCollector):
                 print("Successfully installed hooks for OpenAI v0 API (legacy)")
         
         except ImportError:
-            print("OpenAI library not found, could not install hooks")
+            raise ImportError(
+                "OpenAI is not installed. Please install it with `pip install merit[openai]`"
+            )
         except Exception as e:
             print(f"Error installing OpenAI hooks: {str(e)}")
 

@@ -344,7 +344,7 @@ class LLMRequest(BaseInteractionRequest):
     Extends the base request with fields specific to LLM interactions.
     
     Attributes:
-        prompt: The formatted prompt/input to the LLM
+        input: The Input object containing user_input, prompt_prefix, prompt_suffix
         model: The requested model name
         temperature: Sampling temperature parameter
         max_tokens: Maximum tokens to generate
@@ -353,7 +353,9 @@ class LLMRequest(BaseInteractionRequest):
         frequency_penalty: Penalty for token frequency
         presence_penalty: Penalty for token presence
     """
-    prompt: str = ""
+    from ..core.models import Input
+    
+    input: Input = field(default_factory=lambda: Input(user_input=""))
     model: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
@@ -362,16 +364,21 @@ class LLMRequest(BaseInteractionRequest):
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
     
+    @property
+    def user_input(self) -> str:
+        """Get the raw user input"""
+        return self.input.user_input
+    
     def __post_init__(self):
-        """Ensure raw_content is set if empty but prompt is provided."""
-        if not self.raw_content and self.prompt:
-            self.raw_content = self.prompt
+        """Ensure raw_content is set if empty but input content is provided."""
+        if not self.raw_content and self.input.content:
+            self.raw_content = self.input.content
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation."""
         result = super().to_dict()
         result.update({
-            "prompt": self.prompt,
+            "input": self.input.to_dict(),
         })
         
         # Add optional fields if present
@@ -401,9 +408,18 @@ class LLMRequest(BaseInteractionRequest):
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'LLMRequest':
         """Create from dictionary representation."""
+        from ..core.models import Input
+        
         # Get base fields from parent class
         base_instance = super().from_dict(data)
         
+        # Handle input data
+        input_data = data.get("input", {})
+        if isinstance(input_data, dict):
+            input_obj = Input.from_dict(input_data)
+        else:
+            input_obj = Input(user_input=str(input_data))
+            #check if this is correct
         return cls(
             # Base fields
             id=base_instance.id,
@@ -413,7 +429,7 @@ class LLMRequest(BaseInteractionRequest):
             is_truncated=base_instance.is_truncated,
             
             # LLM-specific fields
-            prompt=data.get("prompt", ""),
+            input=input_obj,
             model=data.get("model"),
             temperature=data.get("temperature"),
             max_tokens=data.get("max_tokens"),
@@ -434,7 +450,8 @@ class LLMRequest(BaseInteractionRequest):
             Estimated token count
         """
         # Very simple approximation - words plus some overhead
-        return len(self.prompt.split()) + 10
+        #TODO use the tokeniser  
+        return len(self.input.content.split()) + 10
 
 
 @dataclass
@@ -577,10 +594,12 @@ class LLMInteraction(BaseInteraction):
         # Generate an ID to link request and response
         request_id = str(uuid.uuid4())
         
-        # Create request
+        # Create request with Input object
+        from ..core.models import Input
+        input_obj = Input(user_input=prompt)
         self.request = LLMRequest(
             id=request_id,
-            prompt=prompt,
+            input=input_obj,
             model=model
         )
         

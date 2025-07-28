@@ -22,7 +22,41 @@ from merit.api.errors import (
     MeritAPITimeoutError,
 )
 
+# Import Pydantic BaseModel for RetryConfig
+from pydantic import BaseModel, Field as PydanticField # Alias Field to avoid conflict if any
+
 logger = get_logger(__name__)
+
+
+class RetryConfig(BaseModel):
+    """Configuration for API call retry mechanisms."""
+    max_retries: int = PydanticField(3, ge=0, description="Maximum number of retries for failed API calls.")
+    initial_delay: float = PydanticField(1.0, gt=0, description="Initial delay in seconds before the first retry.")
+    backoff_factor: float = PydanticField(2.0, gt=1, description="Factor by which the delay increases for subsequent retries (e.g., 2.0 for exponential backoff).")
+    max_delay: float = PydanticField(60.0, gt=0, description="Maximum delay in seconds between retries.")
+    jitter: bool = PydanticField(True, description="Whether to add random jitter to backoff delays to prevent thundering herd.")
+    # List of exception types that should trigger a retry.
+    retry_on_exceptions: Optional[List[Type[Exception]]] = PydanticField(
+        default_factory=lambda: [
+            MeritAPIConnectionError,
+            MeritAPIRateLimitError, # Typically we want to retry on rate limits after a delay
+            MeritAPIServerError,
+            MeritAPITimeoutError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.ChunkedEncodingError,
+        ],
+        description="List of exception types that should trigger a retry."
+    )
+    # List of HTTP status codes that should trigger a retry.
+    retry_status_codes: Optional[List[int]] = PydanticField(
+        default_factory=lambda: [429, 500, 502, 503, 504],
+        description="List of HTTP status codes that should trigger a retry."
+    )
+
+    class Config:
+        arbitrary_types_allowed = True
+
 
 
 class AdaptiveDelay:

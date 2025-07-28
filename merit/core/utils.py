@@ -1,6 +1,6 @@
 import json
 import re
-import numpy as np
+import math
 from typing import Any, List, Iterable, Iterator, Tuple, TypeVar, Optional, Callable
 from merit.core.logging import get_logger
 
@@ -84,34 +84,30 @@ def detect_language(text: str) -> str:
     return "en"
 
 
-def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """
-    Calculate the cosine similarity between two vectors.
+def dot_product(a, b):
+    """Calculate dot product of two vectors using pure Python."""
+    if len(a) != len(b):
+        raise ValueError("Vectors must have the same length")
+    return sum(x * y for x, y in zip(a, b))
+
+def vector_norm(vector):
+    """Calculate the L2 norm (magnitude) of a vector using pure Python."""
+    return math.sqrt(sum(x * x for x in vector))
+
+def cosine_similarity(a, b):
+    """Calculate cosine similarity between two vectors using pure Python."""
+    # Convert to list if needed (in case they're numpy arrays)
+    a = list(a) if hasattr(a, '__iter__') else a
+    b = list(b) if hasattr(b, '__iter__') else b
     
-    Args:
-        a: First vector
-        b: Second vector
-        
-    Returns:
-        float: Cosine similarity between the vectors
-    """
-    # Ensure vectors are numpy arrays
-    a = np.array(a)
-    b = np.array(b)
+    dot_prod = dot_product(a, b)
+    norm_a = vector_norm(a)
+    norm_b = vector_norm(b)
     
-    # Calculate dot product
-    dot_product = np.dot(a, b)
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
     
-    # Calculate magnitudes
-    magnitude_a = np.linalg.norm(a)
-    magnitude_b = np.linalg.norm(b)
-    
-    # Handle zero magnitudes
-    if magnitude_a == 0 or magnitude_b == 0:
-        return 0
-    
-    # Calculate cosine similarity
-    return dot_product / (magnitude_a * magnitude_b)
+    return dot_prod / (norm_a * norm_b)
 
 def batch_iterator(items: Iterable[T], batch_size: int = 16, 
                   process_fn: Optional[Callable[[T], U]] = None) -> Iterator[List[T] | List[U]]:

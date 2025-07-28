@@ -263,13 +263,116 @@ Here is the retrieved context to evaluate:
 </retrieved_context>
 
 Provide your evaluation as a JSON object with the following structure:
-{
+{{
   "is_relevant": true/false,
-  "relevance_score": 0.0-1.0,
+  "contextprecision": 0.0-1.0,
   "explanation": "Detailed explanation of why the context is or is not relevant"
-}
+}}
 
 Make sure to include commas between the fields in the JSON object.
 
 The relevance_score should be a float between 0.0 (completely irrelevant) and 1.0 (completely relevant).
 """)
+
+# Context Recall Prompt (for ContextRecallMetric)
+CONTEXT_RECALL_PROMPT = Prompt("""
+You are an expert evaluator assessing the recall of retrieved context for a given user query and a model's answer.
+Your goal is to determine if the provided 'retrieved_context' contains all the necessary information that *should have been* there to adequately answer the 'user_input' and support the 'model_answer'.
+
+User Input:
+<user_input>
+{user_input}
+</user_input>
+
+Model Answer:
+<model_answer>
+{model_answer}
+</model_answer>
+
+Retrieved Context:
+<retrieved_context>
+{retrieved_context}
+</retrieved_context>
+
+Evaluation Criteria:
+- Score 1: The context comprehensively contains all information necessary to fully answer the user input AND fully support all claims made in the model answer.
+- Score 0.1-0.9: The context is partially missing relevant information. It might support some parts of the answer but not others, or it might help answer the query but incompletely.
+- Score 0: The context is completely irrelevant or missing almost all crucial information needed to answer the query or support the model answer.
+
+Provide your evaluation as a JSON object with two keys: "score" (a float between 0.0 and 1.0) and "explanation" (a brief justification for your score, explaining what information is present or missing in the context).
+Example JSON:
+{
+  "score": 0.7,
+  "explanation": "The context supports the main claim in the answer but lacks specific details mentioned in the query regarding historical data."
+}
+""")
+
+# Claim Extraction Prompt (for FaithfulnessMetric)
+CLAIM_EXTRACTION_PROMPT = Prompt("""
+You are an expert in analyzing text. Your task is to identify and extract individual factual claims from the given 'Model Answer'.
+A claim is a statement that asserts something as a fact, which could be independently verified or refuted.
+Present each claim as a separate item in a JSON list.
+
+Model Answer:
+<model_answer>
+{model_answer}
+</model_answer>
+
+Example Output Format:
+{
+  "claims": [
+    "Claim 1 statement.",
+    "Claim 2 statement.",
+    "Claim 3 statement."
+  ]
+}
+
+If there are no factual claims, return an empty list: {"claims": []}.
+""")
+
+# Claim Verification Prompt (for FaithfulnessMetric)
+CLAIM_VERIFICATION_PROMPT = Prompt("""
+You are an expert evaluator. Your task is to determine if a given 'Claim' can be factually supported by the provided 'Retrieved Context'.
+Do not make assumptions or use external knowledge. Base your decision solely on the information present in the 'Retrieved Context'.
+
+Retrieved Context:
+<retrieved_context>
+{retrieved_context}
+</retrieved_context>
+
+Claim to Verify:
+<claim>
+{claim}
+</claim>
+
+Provide your evaluation as a JSON object with two keys:
+1. "is_supported": boolean (true if the claim is supported by the context, false otherwise).
+2. "explanation": string (a brief justification for your decision, referencing parts of the context if possible, or explaining why it's not supported).
+
+Example Output Format:
+{
+  "is_supported": true,
+  "explanation": "The context states 'X is Y', which directly supports the claim."
+}
+""")
+
+# Response Question Generation Prompt (for RelevanceMetric)
+RESPONSE_QUESTION_GENERATION_PROMPT = Prompt("""
+You are an expert in question generation. Given the 'Model Answer' below, generate {num_questions} distinct questions that this answer could be a response to.
+Focus on creating questions that the provided answer directly and comprehensively addresses.
+
+Model Answer:
+<model_answer>
+{model_answer}
+</model_answer>
+
+Return your output as a JSON object with a single key "generated_questions", which is a list of strings (the questions).
+Example Output Format (for num_questions=2):
+{
+  "generated_questions": [
+    "What is question 1?",
+    "Can you explain question 2?"
+  ]
+}
+""")
+

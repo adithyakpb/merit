@@ -5,256 +5,66 @@ This module defines the base interfaces for all API clients and configurations i
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional,  Callable
-import os
-import inspect
-from functools import wraps
-from dotenv import load_dotenv
+from typing import List, Dict, Any, Optional, Union
 
 from merit.core.logging import get_logger
-from .errors import MeritAPIAuthenticationError, MeritAPIInvalidRequestError
+from .errors import MeritAPIInvalidRequestError
 
 logger = get_logger(__name__)
 
 
-def validate_embeddings_response(func: Callable) -> Callable:
-    """
-    Decorator to validate the response format of get_embeddings method.
+from pydantic import BaseModel, Field, ConfigDict
+
+
+class EmbeddingResponse(BaseModel):
+    """A standardized container for embedding results."""
+    embeddings: List[List[float]] = Field(..., description="The list of embedding vectors.")
+    provider_metadata: Dict[str, Any] = Field({}, description="Provider-specific metadata, like usage stats or model info.")
+
+class TextGenerationResponse(BaseModel):
+    """A standardized container for text generation results."""
+    text: str = Field(..., description="The generated text.")
+    provider_metadata: Dict[str, Any] = Field({}, description="Provider-specific metadata, like finish reasons or token counts.")
     
-    Args:
-        func: The get_embeddings method to validate.
-        
-    Returns:
-        Callable: The wrapped function that validates the response.
-    """
-    @wraps(func)
-    def wrapper(self, texts, *args, **kwargs):
-        # Call the original function
-        result = func(self, texts, *args, **kwargs)
-        
-        # Validate the result
-        if not isinstance(result, list):
-            logger.error(f"Invalid response format from {func.__name__}: expected list, got {type(result)}")
-            # Convert to expected format
-            return []
-        
-        # Ensure each embedding is a list of floats
-        for i, embedding in enumerate(result):
-            if not isinstance(embedding, list):
-                logger.error(f"Invalid embedding format at index {i}: expected list, got {type(embedding)}")
-                result[i] = []
-            else:
-                # Check if all elements are numeric
-                for j, value in enumerate(embedding):
-                    if not isinstance(value, (int, float)):
-                        logger.error(f"Invalid value in embedding {i} at position {j}: expected numeric, got {type(value)}")
-                        embedding[j] = 0.0
-        
-        return result
     
-    return wrapper
-
-
-def validate_text_response(func: Callable) -> Callable:
+class BaseAPIClientConfig(BaseModel):
     """
-    Decorator to validate the response format of generate_text method.
-    
-    Args:
-        func: The generate_text method to validate.
-        
-    Returns:
-        Callable: The wrapped function that validates the response.
-    """
-    @wraps(func)
-    def wrapper(self, prompt, *args, **kwargs):
-        # Call the original function
-        result = func(self, prompt, *args, **kwargs)
-        
-        # Validate the result
-        if not isinstance(result, str):
-            logger.error(f"Invalid response format from {func.__name__}: expected str, got {type(result)}")
-            # Convert to expected format
-            return ""
-        
-        return result
-    
-    return wrapper
-
-
-import inspect
-
-class BaseAPIClientConfig(ABC):
-    """
-    Abstract base class for API client configurations.
+    Abstract base class for API client configurations using Pydantic.
     
     This class defines the interface and common functionality for all API client
     configurations in the system.
     """
     
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        enable_retries: bool = True,
-        enable_throttling: bool = True,
-        max_retries: int = 3,
-        backoff_factor: float = 0.5,
-        initial_delay: float = 0.5,
-        min_delay: float = 0.05,
-        max_delay: float = 2.0,
-        **kwargs
-    ):
+    model_config = ConfigDict(extra='allow', arbitrary_types_allowed=True)
+
+    api_key: Optional[str] = Field(None, description="API key for authentication.")
+    base_url: Optional[str] = Field(None, description="Base URL for the API.")
+    enable_retries: bool = Field(True, description="Enable automatic retry functionality.")
+    enable_throttling: bool = Field(True, description="Enable adaptive throttling functionality.")
+    max_retries: int = Field(3, description="Maximum number of retry attempts.")
+    backoff_factor: float = Field(0.5, description="Exponential backoff factor for retries.")
+    initial_delay: float = Field(0.5, description="Initial delay for adaptive throttling in seconds.")
+    min_delay: float = Field(0.05, description="Minimum delay for adaptive throttling in seconds.")
+    max_delay: float = Field(2.0, description="Maximum delay for adaptive throttling in seconds.")
+
+    def validate_required_fields(self, required_fields: List[str]):
         """
-        Initialize the base API client configuration.
+        Validates that a given list of fields are not None.
         
         Args:
-            api_key: API key for authentication.
-            base_url: Base URL for the API.
-            enable_retries: Enable automatic retry functionality (default: True).
-            enable_throttling: Enable adaptive throttling functionality (default: True).
-            max_retries: Maximum number of retry attempts (default: 3).
-            backoff_factor: Exponential backoff factor for retries (default: 0.5).
-            initial_delay: Initial delay for adaptive throttling in seconds (default: 0.5).
-            min_delay: Minimum delay for adaptive throttling in seconds (default: 0.05).
-            max_delay: Maximum delay for adaptive throttling in seconds (default: 2.0).
-            **kwargs: Additional configuration parameters.
-        """
-        self.api_key = api_key
-        self.base_url = base_url
-        self.enable_retries = enable_retries
-        self.enable_throttling = enable_throttling
-        self.max_retries = max_retries
-        self.backoff_factor = backoff_factor
-        self.initial_delay = initial_delay
-        self.min_delay = min_delay
-        self.max_delay = max_delay
-        self._additional_params = kwargs
-    
-    @classmethod
-    def _get_constructor_params(cls) -> List[str]:
-        """
-        Get parameter names from the constructor.
-        
-        Returns:
-            List[str]: List of parameter names from the constructor.
-        """
-        params = list(inspect.signature(cls.__init__).parameters.keys())
-        # Remove 'self' and 'kwargs'
-        return [p for p in params if p not in ('self', 'kwargs')]
-    
-    @classmethod
-    def get_supported_env_vars(cls) -> List[str]:
-        """
-        Get the list of supported environment variable names.
-        
-        Returns:
-            List[str]: List of supported environment variable names.
-        """
-        # Convert constructor parameter names to uppercase for env vars
-        return [param.upper() for param in cls._get_constructor_params()]
-    
-    @classmethod
-    def from_env(
-        cls, 
-        env_file: Optional[str] = None, 
-        required_vars: Optional[List[str]] = None
-    ) -> 'BaseAPIClientConfig':
-        """
-        Create a configuration from environment variables.
-        
-        Args:
-            env_file: Path to the .env file to load. If None, the default .env file is used.
-            required_vars: List of environment variable names that are required.
-                          If None, defaults to ["BASE_URL"].
-            
-        Returns:
-            BaseAPIClientConfig: A new configuration instance.
+            required_fields: A list of field names to validate.
             
         Raises:
-            ValueError: If any required environment variables are missing.
-            FileNotFoundError: If the specified env_file does not exist.
+            MeritAPIInvalidRequestError: If any of the required fields are None.
         """
-        # Set default required variables if not specified
-        if required_vars is None:
-            required_vars = ["BASE_URL"]  # At minimum, BASE_URL is required
-        
-        # Load environment variables
-        if env_file:
-            # Check if the env file exists
-            if not os.path.exists(env_file):
-                raise FileNotFoundError(f"Environment file not found: {env_file}")
-            loaded = load_dotenv(env_file)
-        else:
-            loaded = load_dotenv()
-        
-        if not loaded:
-            logger.warning("No .env file loaded or file was empty")
-        
-        # Check for required environment variables
-        missing_vars = [var for var in required_vars if os.getenv(var) is None]
-        if missing_vars:
-            raise MeritAPIAuthenticationError(
-                f"Missing required environment variables: {', '.join(missing_vars)}",
-                details={"missing_variables": missing_vars}
-            )
-        
-        # Create instance with available environment variables
-        config_params = {}
-        for var_name in cls.get_supported_env_vars():
-            value = os.getenv(var_name)
-            if value is not None:
-                # Log securely (don't log actual values of sensitive data)
-                if var_name in ["API_KEY", "PASSWORD"]:
-                    logger.debug(f"Found environment variable: {var_name}=********")
-                else:
-                    logger.debug(f"Found environment variable: {var_name}={value}")
-                config_params[var_name.lower()] = value
-        
-        return cls(**config_params)
-    
-    def validate(self, required_params: Optional[List[str]] = None) -> None:
-        """
-        Validate that required configuration parameters are present.
-        
-        Args:
-            required_params: List of parameter names that are required.
-                           If None, defaults to ["base_url"].
-                           
-        Raises:
-            ValueError: If any required parameters are missing.
-        """
-        if required_params is None:
-            required_params = ["base_url"]
-        
-        missing_params = []
-        for param in required_params:
-            param_lower = param.lower()
-            if not hasattr(self, param_lower) or getattr(self, param_lower) is None:
-                if param_lower not in self._additional_params:
-                    missing_params.append(param_lower)
-        
-        if missing_params:
+        missing_fields = [
+            field for field in required_fields if getattr(self, field, None) is None
+        ]
+        if missing_fields:
             raise MeritAPIInvalidRequestError(
-                f"Missing required configuration parameters: {', '.join(missing_params)}",
-                details={"missing_parameters": missing_params}
+                f"Missing required configuration parameters: {', '.join(missing_fields)}",
+                details={"missing_parameters": missing_fields}
             )
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert configuration to dictionary for client initialization.
-        
-        Returns:
-            Dict[str, Any]: Dictionary of configuration parameters.
-        """
-        # Get all instance attributes that don't start with underscore
-        config_dict = {
-            key: value for key, value in self.__dict__.items() 
-            if not key.startswith('_') and value is not None
-        }
-        
-        # Add additional parameters
-        config_dict.update(self._additional_params)
-        return config_dict
 
 
 class BaseAPIClient(ABC):
@@ -263,77 +73,76 @@ class BaseAPIClient(ABC):
     
     This class defines the interface that all API clients must implement.
     """
-    
-    @classmethod
-    def get_supported_env_vars(cls) -> List[str]:
+
+    config: BaseAPIClientConfig
+
+    def __init__(self, config: BaseAPIClientConfig):
+        self.config = config
+        logger.info(f"BaseAPIClient initialized with config: {config.__class__.__name__}")
+
+    @property
+    @abstractmethod
+    def is_authenticated(self) -> bool:
         """
-        Get the list of supported environment variable names.
+        Check if the client is authenticated.
         
         Returns:
-            List[str]: List of supported environment variable names.
+            bool: True if the client is authenticated, False otherwise.
         """
-        return ["API_KEY", "BASE_URL"]
-    
-    @staticmethod
-    def load_from_env(
-        env_file: Optional[str] = None, 
-        required_vars: Optional[List[str]] = None,
-        supported_vars: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_embeddings(self, texts: Union[str, List[str]], **kwargs) -> EmbeddingResponse:
         """
-        Load configuration from environment variables.
+        Get embeddings for the given texts.
         
         Args:
-            env_file: Path to the .env file to load. If None, the default .env file is used.
-            required_vars: List of environment variable names that are required.
-                          If None, defaults to ["BASE_URL"].
-            supported_vars: List of environment variable names to look for.
-                           If None, defaults to ["API_KEY", "BASE_URL"].
-            
+            texts: A string or list of strings to get embeddings for.
+            **kwargs: Additional arguments for the API call.
+
         Returns:
-            Dict[str, Any]: Dictionary of configuration parameters loaded from environment.
-            
-        Raises:
-            ValueError: If any required environment variables are missing.
-            FileNotFoundError: If the specified env_file does not exist.
+            EmbeddingResponse: A standardized response object containing embeddings and metadata.
         """
-        # Set default required variables if not specified
-        if required_vars is None:
-            required_vars = ["BASE_URL"]  # At minimum, BASE_URL is required
+        raise NotImplementedError
+
+    @abstractmethod
+    def generate_text(self, prompt: str, **kwargs) -> TextGenerationResponse:
+        """
+        Generate text based on the given prompt.
         
-        if supported_vars is None:
-            supported_vars = ["API_KEY", "BASE_URL"]
+        Args:
+            prompt: The prompt to generate text from.
+            **kwargs: Additional arguments for the API call.
+
+        Returns:
+            TextGenerationResponse: A standardized response object containing the generated text and metadata.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_embeddings_async(self, texts: Union[str, List[str]], **kwargs) -> EmbeddingResponse:
+        """
+        Asynchronously get embeddings for the given texts.
         
-        # Load environment variables
-        if env_file:
-            # Check if the env file exists
-            if not os.path.exists(env_file):
-                raise FileNotFoundError(f"Environment file not found: {env_file}")
-            loaded = load_dotenv(env_file)
-        else:
-            loaded = load_dotenv()
-            
-        if not loaded:
-            logger.warning("No .env file loaded or file was empty")
+        Args:
+            texts: A string or list of strings to get embeddings for.
+            **kwargs: Additional arguments for the API call.
+
+        Returns:
+            EmbeddingResponse: A standardized response object containing embeddings and metadata.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def generate_text_async(self, prompt: str, **kwargs) -> TextGenerationResponse:
+        """
+        Asynchronously generate text based on the given prompt.
         
-        # Check for required environment variables
-        missing_vars = [var for var in required_vars if os.getenv(var) is None]
-        if missing_vars:
-            raise MeritAPIAuthenticationError(
-                f"Missing required environment variables: {', '.join(missing_vars)}",
-                details={"missing_variables": missing_vars}
-            )
-        
-        # Get environment variables
-        env_vars = {}
-        for var_name in supported_vars:
-            value = os.getenv(var_name)
-            if value is not None:
-                # Log securely (don't log actual values of sensitive data)
-                if var_name in ["API_KEY", "PASSWORD"]:
-                    logger.debug(f"Found environment variable: {var_name}=********")
-                else:
-                    logger.debug(f"Found environment variable: {var_name}={value}")
-                env_vars[var_name.lower()] = value
-        
-        return env_vars
+        Args:
+            prompt: The prompt to generate text from.
+            **kwargs: Additional arguments for the API call.
+
+        Returns:
+            TextGenerationResponse: A standardized response object containing the generated text and metadata.
+        """
+        raise NotImplementedError

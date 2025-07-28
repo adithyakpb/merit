@@ -8,7 +8,6 @@ and parallel processing.
 import os
 import threading
 import concurrent.futures
-import numpy as np
 from typing import Any, List, Callable, Dict
 from functools import partial
 import logging
@@ -114,7 +113,8 @@ def is_valid_input(text: str) -> bool:
     return True
 
 
-def find_optimal_clusters(features: np.ndarray, max_clusters: int = 20, random_state: int = 42) -> int:
+def find_optimal_clusters(features, max_clusters: int = 20, random_state: int = 42) -> int:
+    import numpy as np
     """
     Find the optimal number of clusters using the elbow method.
     
@@ -126,7 +126,6 @@ def find_optimal_clusters(features: np.ndarray, max_clusters: int = 20, random_s
     Returns:
         int: Optimal number of clusters
     """
-    import numpy as np
     
     # Limit max clusters based on data size
     max_clusters = min(max_clusters, len(features) // 5)
@@ -166,11 +165,12 @@ def find_optimal_clusters(features: np.ndarray, max_clusters: int = 20, random_s
         return min(5, len(features) // 20 + 2)
 
 def compute_quality_metrics(
-    original_features: np.ndarray,
+    original_features,
     selected_indices: List[int],
     clustering_results: Dict[str, Any],
-    semantic_embeddings: np.ndarray
+    semantic_embeddings
 ) -> Dict[str, Any]:
+    import numpy as np
     """
     Compute quality metrics for the selected subset.
     

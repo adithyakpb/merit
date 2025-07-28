@@ -3,9 +3,13 @@ Merit Knowledge Base
 
 This module provides the knowledge base implementation for the Merit system.
 """
+from datetime import datetime, timezone
 import numpy as np
-import pandas as pd
-from typing import Dict, Any, List, Optional, Union, Tuple, Sequence
+from typing import List, Dict, Any, Optional, Union, Sequence, Tuple
+import uuid
+
+
+
 
 from ..api.base import BaseAPIClient
 from ..core.models import Document
@@ -23,7 +27,6 @@ DEFAULT_LANGUAGE_DETECTION_SAMPLE_SIZE = 10
 DEFAULT_LANGUAGE_DETECTION_MAX_TEXT_LENGTH = 300
 
 #TODO enable connection to milvus KB, Mongo db, sqlite db
-#TODO enable creation of knowledgebase from set of URLs
 #TODO create Document objects for each document
 #TODO constructor creates documents from any file (.csv, .pdf, .txt, .docx) 
 #TODO enable keyword search, embedding search as and when required. also have functions checking if these are available, so that we do not run into errors, and the user does not set search options when they are not available 
@@ -80,7 +83,7 @@ class KnowledgeBase:
     
     def __init__(
         self,
-        data: Union[pd.DataFrame, List[Dict[str, Any]], None] = None,
+        data: Optional[List[Dict[str, Any]]] = None,
         client: BaseAPIClient = None,
         columns: Optional[Sequence[str]] = None,
         seed: Optional[int] = None,
@@ -93,7 +96,7 @@ class KnowledgeBase:
         Initialize the knowledge base.
         
         Args:
-            data: The data to create the knowledge base from, either a pandas DataFrame or a list of dictionaries.
+            data: The data to create the knowledge base from, either a list of dictionaries or a list of Document objects.
                  Can be None if loading from storage.
             client: The API client to use for embeddings and text generation.
             columns: The columns to use from the data. If None, all columns are used.
@@ -110,7 +113,7 @@ class KnowledgeBase:
         self._client = client
         self._batch_size = batch_size
         self._min_topic_size = min_topic_size or DEFAULT_MIN_TOPIC_SIZE
-        self._kb_id = kb_id or f"kb_{int(pd.Timestamp.now().timestamp())}"
+        self._kb_id = kb_id or f"kb_{int(datetime.now(timezone.utc).timestamp())}"
         
         # Initialize storage
         self._storage = None
@@ -120,13 +123,6 @@ class KnowledgeBase:
         
         # Load or create documents
         if data is not None:
-            # Convert data to DataFrame if it's a list
-            if isinstance(data, list):
-                data = pd.DataFrame(data)
-            
-            if len(data) == 0:
-                raise ValueError("Cannot create a knowledge base from empty data")
-            
             # Create documents from data
             self._documents = self._create_documents(data, columns)
             
@@ -161,7 +157,7 @@ class KnowledgeBase:
         
         logger.info(f"Created knowledge base '{self._kb_id}' with {len(self._documents)} documents in language '{self._language}'")
     
-    def _create_documents(self, data: pd.DataFrame, columns: Optional[Sequence[str]] = None) -> List[Document]:
+    def _create_documents(self, data: List[Dict[str, Any]], columns: Optional[Sequence[str]] = None) -> List[Document]:
         """
         Create documents from the data.
         
@@ -172,31 +168,12 @@ class KnowledgeBase:
         Returns:
             List[Document]: The created documents.
         """
-        # If columns is None, use all columns
-        if columns is None:
-            columns = data.columns.tolist()
-        
-        # Create documents
         documents = []
-        for idx, row in data.iterrows():
-            # Create content by joining columns
-            if len(columns) > 1:
-                content = "\n".join(f"{col}: {row[col]}" for col in columns if col in row)
-            else:
-                content = str(row[columns[0]])
-            
-            # Skip empty documents
-            if not content.strip():
-                continue
-            
-            # Create document
-            doc = Document(
-                content=content,
-                metadata=row.to_dict(),
-                id=str(idx),
-            )
+        for item in data:
+            content = "\n".join(f"{k}: {v}" for k, v in item.items() if (columns is None or k in columns) and v is not None)
+            metadata = {k: v for k, v in item.items() if (columns is None or k in columns)}
+            doc = Document(content=content, metadata=metadata)
             documents.append(doc)
-        
         return documents
     
     def _initialize_storage(self, storage_config: Dict[str, Any]):
@@ -243,7 +220,7 @@ class KnowledgeBase:
                     "embeddings": doc.embeddings.tolist() if doc.embeddings is not None else None,
                     "topic_id": getattr(doc, 'topic_id', None),
                     "reduced_embeddings": getattr(doc, 'reduced_embeddings', None),
-                    "created_at": pd.Timestamp.now().isoformat(),
+                                        "created_at": datetime.now(timezone.utc).isoformat(),
                     "language": self._language
                 }
                 storage_docs.append(storage_doc)
@@ -317,7 +294,7 @@ class KnowledgeBase:
                     update_data = {
                         "$set": {
                             "embeddings": doc.embeddings.tolist(),
-                            "updated_at": pd.Timestamp.now().isoformat()
+                                                        "updated_at": datetime.now(timezone.utc).isoformat()
                         }
                     }
                     
@@ -348,7 +325,7 @@ class KnowledgeBase:
                         "$set": {
                             "topic_id": doc.topic_id,
                             "reduced_embeddings": getattr(doc, 'reduced_embeddings', None),
-                            "updated_at": pd.Timestamp.now().isoformat()
+                                                        "updated_at": datetime.now(timezone.utc).isoformat()
                         }
                     }
                     
@@ -368,7 +345,7 @@ class KnowledgeBase:
                         "topic_id": topic_id,
                         "topic_name": topic_name,
                         "document_count": len(self.get_documents_by_topic(topic_id)),
-                        "created_at": pd.Timestamp.now().isoformat()
+                        "created_at": datetime.now(timezone.utc).isoformat()
                     }
                     
                     self._storage.insert_one(topic_doc, collection_name=topics_collection)
@@ -636,7 +613,23 @@ class KnowledgeBase:
         except Exception as e:
             logger.error(f"Failed to generate topic name: {str(e)}")
             return "Unknown Topic"
-    
+
+    def add_documents(self, documents: List[Union[str, Document]], auto_embed: bool = True):
+        """Adds documents to the knowledge base."""
+        # Convert string documents to Document objects
+        new_docs = [doc if isinstance(doc, Document) else Document(content=doc) for doc in documents]
+
+        # Add to internal list
+        self._documents.extend(new_docs)
+
+        # Save to storage
+        if self._storage:
+            self._save_documents_to_storage(new_docs)
+
+        # Trigger embedding if auto_embed is True
+        if auto_embed:
+            self.embed_documents()
+
     def get_document(self, doc_id: str) -> Optional[Document]:
         """
         Get a document by ID.

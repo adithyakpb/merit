@@ -6,15 +6,28 @@ the AIAPIClient interface with full MERIT system integration.
 """
 
 import os
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Tuple
 from dotenv import load_dotenv
-import requests
 
-from .client import AIAPIClient, AIAPIClientConfig
-from .base import validate_embeddings_response, validate_text_response
+from openai import (
+    OpenAI as SDKOpenAIClient,
+    AzureOpenAI as SDKAzureOpenAIClient,
+    AsyncOpenAI,
+    AsyncAzureOpenAI,
+    APIError,
+    AuthenticationError,
+    RateLimitError,
+    APIConnectionError,
+    APITimeoutError,
+    BadRequestError,
+) # Other errors can be added as needed
+
+from .base import BaseAPIClient, BaseAPIClientConfig, EmbeddingResponse, TextGenerationResponse
+from .run_config import RetryConfig, with_retry, adaptive_throttle # Import decorators
 from ..core.logging import get_logger
-from ..core.cache import cache_embeddings
-from ..core.utils import parse_json
+import json # For safe logging of RetryConfig
+from ..core.utils import parse_json # May still be needed for prompts, but not for SDK response parsing
+
 from .errors import (
     MeritAPIAuthenticationError,
     MeritAPIConnectionError,
@@ -27,147 +40,138 @@ from .errors import (
 
 logger = get_logger(__name__)
 
+# Default base URL for OpenAI API (SDK handles this, but good for reference or overrides)
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
-class OpenAIClientConfig(AIAPIClientConfig):
+# from merit.api.client passed by create_ai_client, or direct parameters.
+
+class OpenAIClientConfig(BaseAPIClientConfig):
     """
-    Configuration class for OpenAI API clients.
+    Configuration specific to the OpenAI client, using the OpenAI SDK.
+    Inherits from the generic AIAPIClientConfig.
     
-    This class handles configuration for OpenAI API clients and can be initialized
-    from different sources including environment variables, config files,
-    or explicit parameters.
+    For Azure OpenAI:
+    - Set api_type to 'azure'
+    - Set api_version (required for Azure)
+    - Set base_url to your Azure endpoint URL
+    - Provide api_key (your Azure OpenAI API key)
+    """
+    embedding_model: str = "text-embedding-ada-002"
+    organization_id: Optional[str] = None
+    request_timeout: Optional[Union[float, Tuple[float, float]]] = 60.0 
+    max_sdk_retries: Optional[int] = 2
+    api_type: str = "openai"
+    api_version: Optional[str] = None
+
+class OpenAIClient(BaseAPIClient):
+    """
+    OpenAI API client implementation using the official OpenAI Python SDK.
+    
+    This class provides methods to interact with the OpenAI API for tasks such as
+    text generation and embeddings.
     """
     
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
-        organization_id: Optional[str] = None,
-        model: str = "gpt-3.5-turbo",
-        embedding_model: str = "text-embedding-ada-002",
-        strict: bool = False,
-        **kwargs
-    ):
+    def __init__(self, config: OpenAIClientConfig):
         """
-        Initialize the OpenAI API client configuration.
+        Initialize the OpenAI client using an OpenAIClientConfig object.
         
         Args:
-            api_key: OpenAI API key.
-            base_url: Base URL for the OpenAI API. Default is "https://api.openai.com/v1".
-            organization_id: OpenAI organization ID.
-            model: Model to use for text generation. Default is "gpt-3.5-turbo".
-            embedding_model: Model to use for embeddings. Default is "text-embedding-ada-002".
-            **kwargs: Additional configuration parameters.
+            config: An OpenAIClientConfig instance containing all necessary configurations.
         """
-        if base_url is None:
-            base_url = "https://api.openai.com/v1"
-            
-        super().__init__(api_key=api_key, base_url=base_url, model=model, **kwargs)
-        self.organization_id = organization_id
-        self.embedding_model = embedding_model
-    
-    @classmethod
-    def get_supported_env_vars(cls) -> List[str]:
-        """
-        Get the list of supported environment variable names.
-        
-        Returns:
-            List[str]: List of supported environment variable names.
-        """
-        # Add OpenAI-specific environment variables
-        return super().get_supported_env_vars() + ["OPENAI_API_KEY", "OPENAI_ORGANIZATION"]
+        super().__init__(config)
+        self.config: OpenAIClientConfig = config
 
+        if not self.config.api_key:
+            raise MeritAPIAuthenticationError("OpenAI API key is not set in the configuration.")
 
-class OpenAIClient(AIAPIClient):
-    """
-    OpenAI API client implementation.
-    
-    This client provides access to OpenAI's API for embeddings and text generation
-    with full MERIT system integration including caching, rate limiting, and validation.
-    """
-    
-    def __init__(
-        self,
-        api_key: Optional[str] = None,
-        organization_id: Optional[str] = None,
-        model: str = "gpt-3.5-turbo",
-        embedding_model: str = "text-embedding-ada-002",
-        base_url: str = "https://api.openai.com/v1",
-        config: Optional[Union[OpenAIClientConfig, Dict[str, Any]]] = None,
-        env_file: Optional[str] = None,
-        required_vars: Optional[List[str]] = None,
-        **kwargs
-    ):
-        """
-        Initialize the OpenAI client.
-        
-        Args:
-            api_key: OpenAI API key. If not provided, will look for OPENAI_API_KEY environment variable.
-            organization_id: OpenAI organization ID. If not provided, will look for OPENAI_ORGANIZATION environment variable.
-            model: Model to use for text generation. Default is "gpt-3.5-turbo".
-            embedding_model: Model to use for embeddings. Default is "text-embedding-ada-002".
-            base_url: Base URL for the OpenAI API. Default is "https://api.openai.com/v1".
-            config: Configuration object or dictionary.
-            env_file: Path to .env file containing environment variables.
-            required_vars: List of environment variable names that are required when loading from environment.
-            **kwargs: Additional parameters.
-        """
-        # Check for OpenAI-specific environment variables first
-        if env_file is not None or api_key is None:
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            if openai_api_key:
-                api_key = openai_api_key
-                
-            openai_org = os.getenv("OPENAI_ORGANIZATION")
-            if openai_org and organization_id is None:
-                organization_id = openai_org
-        
-        # Initialize the parent class with proper inheritance
-        super().__init__(
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            env_file=env_file,
-            config=config,
-            required_vars=required_vars,
-            **kwargs
-        )
-        
-        # Set OpenAI-specific attributes
-        self.organization_id = organization_id
-        self.embedding_model = embedding_model
-        
-        # Override from config if provided
-        if config is not None:
-            if isinstance(config, OpenAIClientConfig):
-                if config.organization_id is not None:
-                    self.organization_id = config.organization_id
-                if config.embedding_model is not None:
-                    self.embedding_model = config.embedding_model
-            elif isinstance(config, dict):
-                if config.get('organization_id') is not None:
-                    self.organization_id = config.get('organization_id')
-                if config.get('embedding_model') is not None:
-                    self.embedding_model = config.get('embedding_model')
-        
-        logger.info(f"Initialized OpenAIClient with model={self.model}, embedding_model={self.embedding_model}")
-    
-    def _get_headers(self) -> Dict[str, str]:
-        """
-        Get headers for OpenAI API requests.
-        
-        Returns:
-            Dict[str, str]: The headers.
-        """
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+        common_args = {
+            "api_key": self.config.api_key,
+            "timeout": self.config.request_timeout,
+            "max_retries": self.config.max_sdk_retries 
         }
         
-        if self.organization_id:
-            headers["OpenAI-Organization"] = self.organization_id
+        if self.config.organization_id:
+            common_args["organization"] = self.config.organization_id
+
+        if self.config.api_type == "azure":
+            self.config.validate_required_fields(["api_version", "base_url"])
+            logger.info(f"Initializing AzureOpenAI client with endpoint: {self.config.base_url} and API version: {self.config.api_version}")
+            self.sdk_client = SDKAzureOpenAIClient(
+                azure_endpoint=self.config.base_url,
+                api_version=self.config.api_version,
+                **common_args
+            )
+            self.async_sdk_client = AsyncAzureOpenAI(
+                azure_endpoint=self.config.base_url,
+                api_version=self.config.api_version,
+                **common_args
+            )
+        else:
+            logger.info(f"Initializing OpenAI client with base_url: {self.config.base_url}")
+            self.sdk_client = SDKOpenAIClient(
+                base_url=self.config.base_url,
+                **common_args
+            )
+            self.async_sdk_client = AsyncOpenAI(
+                base_url=self.config.base_url,
+                **common_args
+            )
         
-        return headers
+        logger.info(f"Initialized OpenAIClient with SDK. Model: {self.config.model}, Embedding Model: {self.config.embedding_model}")
     
+    def _apply_retry_decorators(self):
+        """
+        Apply retry decorators to API methods after initialization is complete.
+        This is called at the end of __init__ to ensure methods are fully defined before wrapping.
+        """
+        if not self.retry_config:
+            logger.warning("No retry configuration available, skipping decorator application")
+            return
+            
+        rc = self.retry_config
+        
+        try:
+            # Wrap generate_text
+            if hasattr(self, 'generate_text'):
+                _original_generate_text = self.generate_text
+                self.generate_text = adaptive_throttle(
+                    with_retry(
+                        max_retries=rc.max_retries,
+                        backoff_factor=rc.backoff_factor,
+                        jitter=rc.jitter,
+                        retry_on=rc.retry_on_exceptions,
+                        retry_status_codes=rc.retry_status_codes
+                    )(_original_generate_text)
+                )
+                logger.info("Applied retry decorators to generate_text method")
+                
+            # Wrap get_embeddings
+            if hasattr(self, 'get_embeddings'):
+                _original_get_embeddings = self.get_embeddings
+                self.get_embeddings = adaptive_throttle(
+                    with_retry(
+                        max_retries=rc.max_retries,
+                        backoff_factor=rc.backoff_factor,
+                        jitter=rc.jitter,
+                        retry_on=rc.retry_on_exceptions,
+                        retry_status_codes=rc.retry_status_codes
+                    )(_original_get_embeddings)
+                )
+                logger.info("Applied retry decorators to get_embeddings method")
+                
+            # Log successful application
+            if hasattr(rc, 'model_dump'):
+                try:
+                    loggable_rc_dict = rc.model_dump()
+                    if 'retry_on_exceptions' in loggable_rc_dict and isinstance(loggable_rc_dict['retry_on_exceptions'], list):
+                        loggable_rc_dict['retry_on_exceptions'] = [exc.__name__ for exc in loggable_rc_dict['retry_on_exceptions']]
+                    logger.info(f"Applied adaptive retry to OpenAIClient methods with effective config: {json.dumps(loggable_rc_dict, indent=2, default=str)}")
+                except Exception as e:
+                    logger.warning(f"Failed to log retry config details: {e}")
+        except Exception as e:
+            logger.error(f"Error applying retry decorators: {e}", exc_info=True)
+            # Continue without decorators rather than failing
+            
     @property
     def is_authenticated(self) -> bool:
         """
@@ -196,110 +200,139 @@ class OpenAIClient(AIAPIClient):
         """
         return self.api_key
     
-    @cache_embeddings
-    @validate_embeddings_response
-    def get_embeddings(self, texts: Union[str, List[str]]) -> List[List[float]]:
+    def get_embeddings(self, texts: Union[str, List[str]], **kwargs) -> EmbeddingResponse:
         """
-        Get embeddings for the given texts using OpenAI's embeddings API.
-        
-        Args:
-            texts: A string or list of strings to get embeddings for.
-            
-        Returns:
-            List[List[float]]: A list of embeddings, where each embedding is a list of floats.
-            
-        Note:
-            This method transforms OpenAI's response format to match the AIAPIClient format.
-            OpenAI returns: {"data": [{"embedding": [...]}, ...]}
-            AIAPIClient expects: [[...], ...]
+        Get embeddings for the given texts using the OpenAI SDK.
         """
-        # Ensure texts is a list
         if isinstance(texts, str):
             texts = [texts]
         
+        if not texts:
+            return []
+
+        embedding_model_to_use = kwargs.pop("model", self.config.embedding_model)
+        logger.info(f"[SDK] Getting embeddings for {len(texts)} texts using model {embedding_model_to_use}")
+
         try:
-            logger.info(f"Getting embeddings for {len(texts)} texts using model {self.embedding_model}")
-            
-            response = requests.post(
-                f"{self.base_url}/embeddings",
-                headers=self._get_headers(),
-                json={
-                    "input": texts,
-                    "model": self.embedding_model
-                }
+            response = self.sdk_client.embeddings.create(
+                model=embedding_model_to_use,
+                input=texts,
+                **kwargs
             )
-            
-            response.raise_for_status()
-            data = parse_json(response.text)
-            
-            # Extract embeddings from the response and format to match AIAPIClient
-            if "data" in data:
-                embeddings = [item["embedding"] for item in data["data"]]
-                return embeddings
+            embeddings = [embedding_obj.embedding for embedding_obj in response.data]
+            logger.info(f"[SDK] Successfully got embeddings for {len(texts)} texts.")
+            return EmbeddingResponse(
+                embeddings=embeddings,
+                provider_metadata=response.model_dump()
+            )
+        except APIError as e:
+            if isinstance(e, RateLimitError):
+                raise MeritAPIRateLimitError from e
+            elif isinstance(e, AuthenticationError):
+                raise MeritAPIAuthenticationError from e
+            elif isinstance(e, BadRequestError):
+                raise MeritAPIInvalidRequestError from e
             else:
-                logger.error("No embeddings in response")
-                return [[] for _ in texts]
-        
-        except Exception as e:
-            merit_error = self._convert_requests_error(e, "embeddings")
-            return self._handle_api_error(merit_error) or [[] for _ in texts]
-    
-    @validate_text_response
-    def generate_text(self, prompt: str, strict: Optional[bool] = None, **kwargs) -> str:
+                raise MeritAPIServerError from e
+
+    def generate_text(self, prompt: str, **kwargs) -> TextGenerationResponse:
         """
-        Generate text based on the given prompt using OpenAI's chat completions API.
-        
-        Args:
-            prompt: The prompt to generate text from.
-            strict: Override for strict mode. If None, uses client's strict setting.
-            **kwargs: Additional arguments to pass to the API.
-            
-        Returns:
-            str: The generated text.
-            
-        Note:
-            This method transforms OpenAI's response format to match the AIAPIClient format.
-            OpenAI returns: {"choices": [{"message": {"content": "..."}}]}
-            AIAPIClient expects: "..."
+        Generate text based on the given prompt using the OpenAI SDK's chat completions.
         """
-        # Set default parameters
+        logger.info(f"[SDK] OpenAIClient.generate_text called. Model: {self.config.model}")
+
+        messages = kwargs.pop("messages", [{"role": "user", "content": prompt}])
+        
         params = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-            "max_tokens": 1000,
+            "model": self.config.model,
+            "messages": messages,
+            **kwargs
         }
-        
-        # Update with any provided kwargs (excluding strict)
-        api_kwargs = {k: v for k, v in kwargs.items() if k != 'strict'}
-        params.update(api_kwargs)
-        
-        # If messages were provided directly, use those instead of creating from prompt
-        if "messages" in kwargs:
-            params["messages"] = kwargs["messages"]
-        
+
         try:
-            logger.info(f"Generating text with model {self.model}")
-            
-            response = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers=self._get_headers(),
-                json=params
+            completion = self.sdk_client.chat.completions.create(**params)
+            generated_content = completion.choices[0].message.content or ""
+            logger.info(f"[SDK] Successfully generated text using model {params.get('model')}.")
+            return TextGenerationResponse(
+                text=generated_content,
+                provider_metadata=completion.model_dump()
             )
-            
-            response.raise_for_status()
-            data = parse_json(response.text)
-            
-            # Extract text from the response and format to match AIAPIClient
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"]
+        except APIError as e:
+            if isinstance(e, RateLimitError):
+                raise MeritAPIRateLimitError from e
+            elif isinstance(e, AuthenticationError):
+                raise MeritAPIAuthenticationError from e
+            elif isinstance(e, BadRequestError):
+                raise MeritAPIInvalidRequestError from e
             else:
-                error = ValueError("No text in response")
-                return self._handle_api_error(error, strict)
+                raise MeritAPIServerError from e
+
+    async def get_embeddings_async(self, texts: Union[str, List[str]], **kwargs) -> EmbeddingResponse:
+        """
+        Asynchronously get embeddings for the given texts using the OpenAI SDK.
+        """
+        if isinstance(texts, str):
+            texts = [texts]
         
-        except Exception as e:
-            merit_error = self._convert_requests_error(e, "chat/completions")
-            return self._handle_api_error(merit_error, strict) or ""
+        if not texts:
+            return EmbeddingResponse(embeddings=[])
+
+        embedding_model_to_use = kwargs.pop("model", self.config.embedding_model)
+        logger.info(f"[SDK] Getting async embeddings for {len(texts)} texts using model {embedding_model_to_use}")
+
+        try:
+            response = await self.async_sdk_client.embeddings.create(
+                model=embedding_model_to_use,
+                input=texts,
+                **kwargs
+            )
+            embeddings = [embedding_obj.embedding for embedding_obj in response.data]
+            logger.info(f"[SDK] Successfully got async embeddings for {len(texts)} texts.")
+            return EmbeddingResponse(
+                embeddings=embeddings,
+                provider_metadata=response.model_dump()
+            )
+        except APIError as e:
+            if isinstance(e, RateLimitError):
+                raise MeritAPIRateLimitError from e
+            elif isinstance(e, AuthenticationError):
+                raise MeritAPIAuthenticationError from e
+            elif isinstance(e, BadRequestError):
+                raise MeritAPIInvalidRequestError from e
+            else:
+                raise MeritAPIServerError from e
+
+    async def generate_text_async(self, prompt: str, **kwargs) -> TextGenerationResponse:
+        """
+        Asynchronously generate text based on the given prompt using the OpenAI SDK's chat completions.
+        """
+        logger.info(f"[SDK] OpenAIClient.generate_text_async called. Model: {self.config.model}")
+
+        messages = kwargs.pop("messages", [{"role": "user", "content": prompt}])
+        
+        params = {
+            "model": self.config.model,
+            "messages": messages,
+            **kwargs
+        }
+
+        try:
+            completion = await self.async_sdk_client.chat.completions.create(**params)
+            generated_content = completion.choices[0].message.content or ""
+            logger.info(f"[SDK] Successfully generated async text using model {params.get('model')}.")
+            return TextGenerationResponse(
+                text=generated_content,
+                provider_metadata=completion.model_dump()
+            )
+        except APIError as e:
+            if isinstance(e, RateLimitError):
+                raise MeritAPIRateLimitError from e
+            elif isinstance(e, AuthenticationError):
+                raise MeritAPIAuthenticationError from e
+            elif isinstance(e, BadRequestError):
+                raise MeritAPIInvalidRequestError from e
+            else:
+                raise MeritAPIServerError from e
     
     def create_chat_completion(self, messages: List[Dict[str, str]], **kwargs) -> Dict[str, Any]:
         """
@@ -327,14 +360,9 @@ class OpenAIClient(AIAPIClient):
         try:
             logger.info(f"Creating chat completion with model {self.model}")
             
-            response = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers=self._get_headers(),
-                json=params
-            )
-            
-            response.raise_for_status()
-            return parse_json(response.text)
+            # Use the SDK client for chat completions
+            response = self.sdk_client.chat.completions.create(**params)
+            return response.model_dump() # Convert the SDK response object to a dict
         
         except Exception as e:
             merit_error = self._convert_requests_error(e, "chat/completions")
@@ -351,15 +379,9 @@ class OpenAIClient(AIAPIClient):
         try:
             logger.info("Listing available models")
             
-            response = requests.get(
-                f"{self.base_url}/models",
-                headers=self._get_headers()
-            )
-            
-            response.raise_for_status()
-            data = parse_json(response.text)
-            
-            return [model["id"] for model in data.get("data", [])]
+            # Use the SDK client to list models
+            response = self.sdk_client.models.list()
+            return [model.id for model in response.data]
         
         except Exception as e:
             merit_error = self._convert_requests_error(e, "models")

@@ -293,10 +293,17 @@ class MetricRegistry:
             The metric class
             
         Raises:
-            ValueError: If the metric isn't found
+            KeyError: If the metric is not found
         """
+        logger.debug(f"MetricRegistry.get: Attempting to get metric with name: '{name}'")
+        logger.debug(f"MetricRegistry.get: Available keys in registry: {list(self._metrics.keys())}")
         if name not in self._metrics:
-            raise ValueError(f"Metric '{name}' not found in registry")
+            logger.error(f"MetricRegistry.get: Metric '{name}' not found. Case-sensitive check.")
+            # For debugging, let's check for a case-insensitive match
+            for k in self._metrics.keys():
+                if k.lower() == name.lower():
+                    logger.warning(f"MetricRegistry.get: Found case-insensitive match for '{name}': '{k}'. This indicates a potential casing issue in the query or registration.")
+                    break
         return self._metrics[name]
     
     def list(self, 
@@ -326,17 +333,24 @@ class MetricRegistry:
     
     def create_instance(self, name: str, *args, **kwargs) -> BaseMetric:
         """
-        Create an instance of a metric by name.
+        Create an instance of a registered metric.
         
         Args:
             name: The name of the metric
-            *args, **kwargs: Arguments to pass to the metric constructor
+            *args, **kwargs: Arguments to pass to the constructor
             
         Returns:
-            An instance of the metric
+            Metric instance
         """
+        logger.debug(f"MetricRegistry.create_instance: Attempting to create instance for metric name: '{name}' with params: {kwargs}")
         metric_class = self.get(name)
-        return metric_class(*args, **kwargs)
+        if metric_class:
+            logger.debug(f"MetricRegistry.create_instance: Found metric class: {metric_class.__name__}")
+            return metric_class(*args, **kwargs)
+        else:
+            # This case should ideally be caught by self.get(name) raising KeyError
+            logger.error(f"MetricRegistry.create_instance: Metric class for '{name}' not found by get_metric prior to instantiation.")
+            raise KeyError(f"Metric '{name}' not found in registry, cannot create instance.")
     
     def get_metadata(self, name: str) -> Dict[str, Any]:
         """

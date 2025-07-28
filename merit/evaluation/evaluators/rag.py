@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Union, Callable, Sequence
 from inspect import signature
 from ...metrics.base import BaseMetric
 from ...metrics.rag import CorrectnessMetric, FaithfulnessMetric, RelevanceMetric, CoherenceMetric, FluencyMetric
-from .base import BaseEvaluator, EvaluationReport, EvaluationResult
+import traceback
 from ...core.models import TestSet, TestItem, Response
 from ...knowledge import KnowledgeBase
 from ...core.logging import get_logger
@@ -147,6 +147,7 @@ class RAGEvaluator(BaseEvaluator):
                 results.append(result)
             except Exception as e:
                 logger.error(f"Error evaluating input {sample.id}: {str(e)}")
+                traceback.print_exc()
         
         # Create report
         return EvaluationReport(
